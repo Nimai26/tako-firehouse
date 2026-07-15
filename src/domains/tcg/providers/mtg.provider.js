@@ -107,7 +107,8 @@ export async function searchMTGCards(query, options = {}) {
     const cards = data.data ? data.data.slice(0, max) : [];
     
     const result = {
-      total_cards: data.total_cards || 0,
+      // Scryfall omet parfois total_cards → on retombe sur le nombre réel de cartes
+      total_cards: data.total_cards || cards.length,
       has_more: data.has_more || false,
       data: cards
     };

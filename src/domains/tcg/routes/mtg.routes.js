@@ -74,7 +74,7 @@ router.get('/search', async (req, res) => {
       provider: 'mtg',
       domain: 'tcg',
       query: q,
-      total: rawData.total || 0,
+      total: rawData.total_cards || 0,
       count: normalized.length,
       data: normalized,
       pagination: rawData.hasMore ? {
@@ -167,7 +167,7 @@ router.get('/sets', async (req, res) => {
       provider: 'mtg',
       domain: 'tcg',
       query: null,
-      total: rawData.total || 0,
+      total: rawData.total_cards || 0,
       count: normalized.length,
       data: normalized,
       pagination: null,

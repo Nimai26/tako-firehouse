@@ -22,6 +22,9 @@ import { logger } from '../../../shared/utils/logger.js';
 
 // Configuration
 const GOOGLE_BOOKS_BASE_URL = 'https://www.googleapis.com/books/v1';
+// Depuis 2021, l'API Books EXIGE un `country` cohérent avec l'IP de sortie, sinon elle renvoie
+// « backendFailed » (HTTP 503). Tako sort par le VPN France → FR par défaut.
+const GB_COUNTRY = process.env.GOOGLE_BOOKS_COUNTRY || 'FR';
 const GOOGLE_BOOKS_API_KEY = process.env.GOOGLE_BOOKS_API_KEY;
 const DEFAULT_MAX_RESULTS = 20;
 const MAX_RESULTS_LIMIT = 40;
@@ -144,6 +147,7 @@ export class GoogleBooksProvider extends BaseProvider {
 
     url += `&key=${encodeURIComponent(this.apiKey)}`;
     url += `&maxResults=${limit}`;
+    url += `&country=${GB_COUNTRY}`;
     url += `&orderBy=${orderBy}`;
 
     if (lang) {
@@ -207,7 +211,7 @@ export class GoogleBooksProvider extends BaseProvider {
 
     this.log.debug(`Récupération volume: ${volumeId}`);
 
-    const url = `${GOOGLE_BOOKS_BASE_URL}/volumes/${encodeURIComponent(volumeId)}?key=${encodeURIComponent(this.apiKey)}`;
+    const url = `${GOOGLE_BOOKS_BASE_URL}/volumes/${encodeURIComponent(volumeId)}?key=${encodeURIComponent(this.apiKey)}&country=${GB_COUNTRY}`;
 
     const response = await this.fetchWithRetry(url);
 
@@ -381,7 +385,7 @@ export class GoogleBooksProvider extends BaseProvider {
 
     try {
       // Recherche simple pour tester l'API
-      const url = `${GOOGLE_BOOKS_BASE_URL}/volumes?q=test&key=${encodeURIComponent(this.apiKey)}&maxResults=1`;
+      const url = `${GOOGLE_BOOKS_BASE_URL}/volumes?q=test&key=${encodeURIComponent(this.apiKey)}&maxResults=1&country=${GB_COUNTRY}`;
 
       const response = await fetch(url, {
         headers: { 'Accept': 'application/json' },

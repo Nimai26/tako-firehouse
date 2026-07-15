@@ -20,40 +20,34 @@ const CRAWLER_UA = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.c
 const REQUEST_TIMEOUT = 15000;
 
 /**
- * Effectue une requête HTTP directe vers Coleka avec le UA crawler
+ * Récupère une page Coleka via FlareSolverr (Chrome headless derrière le VPN dédié).
+ * L'ancien contournement « UA Googlebot » ne marche plus : Coleka impose désormais le
+ * Turnstile Cloudflare à tout le monde → 403 en fetch direct. FlareSolverr résout le challenge.
  * @param {string} url - URL à récupérer
  * @returns {Promise<string>} - HTML de la page
  */
 async function fetchColeka(url) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-  
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': CRAWLER_UA,
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'fr-FR,fr;q=0.9',
-      },
-      signal: controller.signal,
-      redirect: 'follow',
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} pour ${url}`);
-    }
-    
-    const html = await response.text();
-    
-    // Vérifier qu'on n'a pas été redirigé vers la page Turnstile
-    if (html.includes('cf-turnstile') || html.includes('Vérification - COLEKA')) {
-      throw new Error('Protection Cloudflare Turnstile active — le contournement crawler ne fonctionne plus');
-    }
-    
-    return html;
-  } finally {
-    clearTimeout(timeout);
+  const fsrUrl = process.env.FSR_URL || process.env.FLARESOLVERR_URL || 'http://tako-gluetun:8191/v1';
+  const response = await fetch(fsrUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cmd: 'request.get', url, maxTimeout: 60000 }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`FlareSolverr HTTP ${response.status} pour ${url}`);
   }
+
+  const data = await response.json();
+  if (data.status !== 'ok' || !data.solution) {
+    throw new Error(`FlareSolverr KO pour ${url}: ${data.message || data.status}`);
+  }
+
+  const html = data.solution.response || '';
+  if (html.includes('cf-turnstile') || html.includes('Vérification - COLEKA')) {
+    throw new Error('Turnstile Cloudflare toujours actif malgré FlareSolverr');
+  }
+  return html;
 }
 
 /**
