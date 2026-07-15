@@ -84,25 +84,33 @@ export async function searchMTGCards(query, options = {}) {
   logger.info(`[MTG] Searching: ${query} (max ${max}, lang ${lang})`);
   
   try {
-    // Construire la requête Scryfall
-    // Si la query ne contient pas d'opérateurs, chercher dans le nom
-    let searchQuery = query.includes(':') ? query : `name:${query}`;
-    
-    // Ajouter le filtre de langue si différent de 'any'
-    if (lang && lang !== 'any') {
-      searchQuery += ` lang:${lang}`;
+    // Construire la requête Scryfall. Si la query ne contient pas d'opérateurs → recherche par nom.
+    const baseQuery = query.includes(':') ? query : `name:${query}`;
+    // Scryfall indexe les noms en ANGLAIS. Chercher `lang:fr` échoue (404) pour toute carte jamais
+    // imprimée en français (ex « Black Lotus »). On tente la langue demandée puis on REPLIE sur le
+    // nom anglais (comme yugioh).
+    const withLang = (lang && lang !== 'any' && lang !== 'en') ? `${baseQuery} lang:${lang}` : baseQuery;
+
+    const runSearch = async (q) => {
+      const params = new URLSearchParams({ q, unique, order, dir, page: 1 });
+      return await scryfallRequest(`/cards/search?${params}`);
+    };
+
+    let data;
+    try {
+      data = await runSearch(withLang);
+    } catch (err) {
+      if (withLang !== baseQuery) {
+        logger.warn(`[MTG] recherche ${lang} échouée, repli sur le nom anglais`);
+        data = await runSearch(baseQuery);
+      } else {
+        throw err;
+      }
     }
-    
-    const params = new URLSearchParams({
-      q: searchQuery,
-      unique: unique,
-      order: order,
-      dir: dir,
-      page: 1
-    });
-    
-    const data = await scryfallRequest(`/cards/search?${params}`);
-    
+    if ((!data.data || data.data.length === 0) && withLang !== baseQuery) {
+      try { data = await runSearch(baseQuery); } catch (_) { /* garde le vide */ }
+    }
+
     // Limiter les résultats
     const cards = data.data ? data.data.slice(0, max) : [];
     
