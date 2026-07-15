@@ -1,0 +1,16 @@
+# Docker Compose - Development Override
+# Usage: docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up -d
+
+services:
+  tako-api:
+    # Override image to build locally
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Mount source code for live development
+    volumes:
+      - ./src:/app/src:ro
+      - ./docs:/app/docs:ro
+      - ./scripts:/app/scripts:ro
+    environment:
+      - NODE_ENV=development

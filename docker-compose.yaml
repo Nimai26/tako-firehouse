@@ -1,0 +1,123 @@
+services:
+  tako-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tako_api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    # Mount source code for live development
+    volumes:
+      - ./src:/app/src
+      - ./docs:/app/docs
+      # Stockage fichiers : STUB de dossiers vides → active isReady (getFileUrl) sans copier les
+      # ~10 Go d'images. Les URLs pointent vers FILE_BASE_URL=https://tako.snowmanprod.fr/files
+      # (prod, qui sert les vraies images depuis Egon). Métadonnées = locales ; images = via prod.
+      - ./storage-stub:/data/tako-storage:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - DEFAULT_LOCALE=fr-FR
+      # Database (cache + données internes MEGA/KRE-O/Carddass)
+      - DB_ENABLED=true
+      - DB_HOST=tako-db
+      - DB_PORT=5432
+      - DB_NAME=tako_cache
+      - DB_USER=tako
+      - DB_PASSWORD=${DB_PASSWORD:-changeme}
+      # Stockage fichiers
+      - STORAGE_PATH=${STORAGE_PATH:-/data/tako-storage}
+      - FILE_BASE_URL=${FILE_BASE_URL:-http://localhost:3000/files}
+      # FlareSolverr = stack DÉDIÉE Tako (tako-flaresolverr derrière tako-gluetun → ProtonVPN
+      # France, IP STABLE et indépendante des IA). Évite que le changement de zone VPN des IA
+      # casse les sessions anti-bot de Tako. FSR_URL + FLARESOLVERR_URL (double nom historique).
+      - FSR_URL=http://tako-gluetun:8191/v1
+      - FLARESOLVERR_URL=http://tako-gluetun:8191/v1
+      - VPN_PROXY_URL=
+      - GLUETUN_CONTROL_URL=${GLUETUN_CONTROL_URL:-http://tako-gluetun:8000}
+      # APIs (mettre les clés dans .env)
+      - BRICKSET_API_KEY=${BRICKSET_API_KEY:-}
+      - BRICKSET_USERNAME=${BRICKSET_USERNAME:-}
+      - BRICKSET_PASSWORD=${BRICKSET_PASSWORD:-}
+      - REBRICKABLE_API_KEY=${REBRICKABLE_API_KEY:-}
+      - TMDB_API_KEY=${TMDB_API_KEY:-}
+      - TVDB_API_KEY=${TVDB_API_KEY:-}
+      - IGDB_CLIENT_ID=${IGDB_CLIENT_ID:-}
+      - IGDB_CLIENT_SECRET=${IGDB_CLIENT_SECRET:-}
+      - COMICVINE_API_KEY=${COMICVINE_API_KEY:-}
+      - DISCOGS_TOKEN=${DISCOGS_TOKEN:-}
+      - RAWG_API_KEY=${RAWG_API_KEY:-}
+      - POKEMON_TCG_API_KEY=${POKEMON_TCG_API_KEY:-}
+      - BGG_API_TOKEN=${BGG_API_TOKEN:-}
+      - BGG_USERNAME=${BGG_USERNAME:-}
+      - BGG_PASSWORD=${BGG_PASSWORD:-}
+    depends_on:
+      - tako-db
+      - tako-gluetun
+    networks:
+      - tako-network
+
+  tako-db:
+    image: postgres:16-alpine
+    container_name: tako_db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=tako_cache
+      - POSTGRES_USER=tako
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-changeme}
+    volumes:
+      - tako-db-data:/var/lib/postgresql/data
+    networks:
+      - tako-network
+
+  # VPN DÉDIÉ Tako : IP ProtonVPN France STABLE. Les IA changent leur propre zone (ai-gluetun)
+  # sans casser les sessions anti-bot de Tako. Creds Proton partagés (secrets Firehouse).
+  tako-gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: tako-gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    env_file:
+      - /root/.firehouse/home/secrets/vpn_proton.env
+    environment:
+      SERVER_COUNTRIES: ${TAKO_VPN_COUNTRY:-France}
+      HEALTH_VPN_DURATION_INITIAL: "30s"
+      TZ: Europe/Paris
+    ports:
+      - "127.0.0.1:8192:8191"   # tako-flaresolverr (via netns gluetun) — 8191 pris par les IA
+    restart: unless-stopped
+    networks:
+      - tako-network
+
+  tako-flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: tako_flaresolverr
+    network_mode: "service:tako-gluetun"   # sort PAR le VPN dédié Tako
+    environment:
+      - LOG_LEVEL=info
+      - BROWSER_TIMEOUT=60000
+      - MAX_SESSIONS=3
+      - SESSION_TTL=300000
+      - HEADLESS=true
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+    depends_on:
+      - tako-gluetun
+    restart: unless-stopped
+
+networks:
+  tako-network:
+    driver: bridge
+
+volumes:
+  tako-db-data:

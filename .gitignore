@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.backup
+.credentials
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Build
+dist/
+build/
+
+# Coverage
+coverage/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+tmp/
+temp/
+*.tmp
+
+# Cache
+.cache/
+
+# POC / Experimental
+mega-archive/
+
+# Version Firehouse : dumps DB, sauvegardes, stub de stockage
+*.dump
+*.sql.gz
+*.bak-*
+docker-compose.yaml.bak-*
+storage-stub/**
+!storage-stub/
+!storage-stub/*/
+!storage-stub/**/.gitkeep

@@ -1,0 +1,688 @@
+openapi: 3.1.0
+info:
+  title: Tako API - Books Domain
+  version: 1.0.0
+  description: |
+    API pour la recherche et la consultation de livres via différentes sources.
+    
+    ## Providers disponibles
+    
+    | Provider | Description | Clé API | Rate Limit |
+    |----------|-------------|---------|------------|
+    | **Google Books** | Plus grande base de données de livres numériques | Requise | 1000 req/jour (gratuit) |
+    | **Open Library** | Bibliothèque ouverte et collaborative | Non | Non spécifié |
+    
+    ## Fonctionnalités
+    
+    - Recherche par titre, auteur, ISBN
+    - Détails complets (synopsis, couvertures, métadonnées)
+    - Support multi-langues
+    - Validation et conversion ISBN (ISBN-10/ISBN-13)
+  contact:
+    name: Tako API
+    url: https://github.com/tako-api
+  license:
+    name: MIT
+    identifier: MIT
+
+servers:
+  - url: /api/books
+    description: Base path pour le domaine books
+
+tags:
+  - name: Domain
+    description: Informations et health check du domaine
+  - name: Google Books
+    description: |
+      Google Books API - La plus grande base de données de livres numériques.
+      
+      **Configuration requise:**
+      - `GOOGLE_BOOKS_API_KEY`: Clé API Google
+      
+      **Limites:**
+      - 1000 requêtes/jour (quota gratuit)
+      - 40 résultats max par recherche
+  - name: Open Library
+    description: |
+      Open Library - Bibliothèque ouverte et collaborative.
+      
+      **Configuration requise:**
+      - Aucune (API gratuite)
+      
+      **Limites:**
+      - Pas de limite documentée
+      - 100 résultats max par recherche
+
+paths:
+  /:
+    get:
+      tags: [Domain]
+      summary: Informations du domaine
+      description: Retourne les informations sur le domaine books et ses providers
+      operationId: getBooksInfo
+      responses:
+        '200':
+          description: Informations du domaine
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainInfo'
+
+  /health:
+    get:
+      tags: [Domain]
+      summary: Health check global
+      description: Vérifie la santé de tous les providers du domaine
+      operationId: getBooksHealth
+      responses:
+        '200':
+          description: Tous les providers sont en bonne santé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainHealth'
+        '207':
+          description: Certains providers sont dégradés
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainHealth'
+        '503':
+          description: Tous les providers sont indisponibles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainHealth'
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # GOOGLE BOOKS
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  /googlebooks/health:
+    get:
+      tags: [Google Books]
+      summary: Health check Google Books
+      description: Vérifie la disponibilité de l'API Google Books
+      operationId: getGoogleBooksHealth
+      responses:
+        '200':
+          description: API disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderHealth'
+        '503':
+          description: API indisponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderHealth'
+
+  /googlebooks/search:
+    get:
+      tags: [Google Books]
+      summary: Rechercher des livres
+      description: |
+        Recherche de livres par titre ou ISBN via Google Books.
+        
+        La recherche détecte automatiquement si la requête est un ISBN
+        et ajuste le type de recherche en conséquence.
+      operationId: searchGoogleBooks
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Terme de recherche (titre ou ISBN)
+          schema:
+            type: string
+            example: "Harry Potter"
+        - name: maxResults
+          in: query
+          description: Nombre maximum de résultats (1-40)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 40
+            default: 20
+        - name: orderBy
+          in: query
+          description: Ordre de tri
+          schema:
+            type: string
+            enum: [relevance, newest]
+            default: relevance
+        - name: langRestrict
+          in: query
+          description: Restreindre à une langue (code ISO 2 lettres)
+          schema:
+            type: string
+            example: "fr"
+      responses:
+        '200':
+          description: Résultats de recherche
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookSearchResponse'
+        '400':
+          description: Paramètres invalides
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /googlebooks/search/author:
+    get:
+      tags: [Google Books]
+      summary: Rechercher par auteur
+      description: Recherche de livres par nom d'auteur via Google Books
+      operationId: searchGoogleBooksByAuthor
+      parameters:
+        - name: author
+          in: query
+          required: true
+          description: Nom de l'auteur
+          schema:
+            type: string
+            example: "J.K. Rowling"
+        - name: maxResults
+          in: query
+          description: Nombre maximum de résultats (1-40)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 40
+            default: 20
+        - name: orderBy
+          in: query
+          description: Ordre de tri
+          schema:
+            type: string
+            enum: [relevance, newest]
+            default: relevance
+        - name: langRestrict
+          in: query
+          description: Restreindre à une langue
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Résultats de recherche
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookSearchResponse'
+        '400':
+          description: Paramètres invalides
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /googlebooks/{volumeId}:
+    get:
+      tags: [Google Books]
+      summary: Détails d'un livre
+      description: Récupère les détails complets d'un livre par son ID Google Books
+      operationId: getGoogleBookById
+      parameters:
+        - name: volumeId
+          in: path
+          required: true
+          description: ID du volume Google Books
+          schema:
+            type: string
+            example: "zyTCAlFPjgYC"
+      responses:
+        '200':
+          description: Détails du livre
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookDetailResponse'
+        '404':
+          description: Livre non trouvé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # OPEN LIBRARY
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  /openlibrary/health:
+    get:
+      tags: [Open Library]
+      summary: Health check Open Library
+      description: Vérifie la disponibilité de l'API Open Library
+      operationId: getOpenLibraryHealth
+      responses:
+        '200':
+          description: API disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderHealth'
+        '503':
+          description: API indisponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderHealth'
+
+  /openlibrary/search:
+    get:
+      tags: [Open Library]
+      summary: Rechercher des livres
+      description: |
+        Recherche de livres par titre ou ISBN via Open Library.
+        
+        La recherche détecte automatiquement si la requête est un ISBN
+        et utilise l'endpoint approprié.
+      operationId: searchOpenLibrary
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Terme de recherche (titre ou ISBN)
+          schema:
+            type: string
+            example: "Le Petit Prince"
+        - name: limit
+          in: query
+          description: Nombre maximum de résultats (1-100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: lang
+          in: query
+          description: Restreindre à une langue (code ISO 2 lettres)
+          schema:
+            type: string
+            example: "fr"
+      responses:
+        '200':
+          description: Résultats de recherche
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookSearchResponse'
+        '400':
+          description: Paramètres invalides
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /openlibrary/search/author:
+    get:
+      tags: [Open Library]
+      summary: Rechercher par auteur
+      description: Recherche de livres par nom d'auteur via Open Library
+      operationId: searchOpenLibraryByAuthor
+      parameters:
+        - name: author
+          in: query
+          required: true
+          description: Nom de l'auteur
+          schema:
+            type: string
+            example: "Antoine de Saint-Exupéry"
+        - name: limit
+          in: query
+          description: Nombre maximum de résultats (1-100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: lang
+          in: query
+          description: Restreindre à une langue
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Résultats de recherche
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookSearchResponse'
+        '400':
+          description: Paramètres invalides
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /openlibrary/{olId}:
+    get:
+      tags: [Open Library]
+      summary: Détails d'un livre
+      description: |
+        Récupère les détails complets d'un livre par son ID Open Library.
+        
+        **Format de l'ID:**
+        - `OL1234W` pour un "Work" (œuvre)
+        - `OL1234M` pour une "Edition"
+      operationId: getOpenLibraryById
+      parameters:
+        - name: olId
+          in: path
+          required: true
+          description: ID Open Library (format OL1234W ou OL1234M)
+          schema:
+            type: string
+            example: "OL82563W"
+        - name: lang
+          in: query
+          description: Langue préférée
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Détails du livre
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookDetailResponse'
+        '404':
+          description: Livre non trouvé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    # ═══════════════════════════════════════════════════════════════════════════
+    # DOMAIN SCHEMAS
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    DomainInfo:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "ok"
+        domain:
+          type: string
+          example: "books"
+        version:
+          type: string
+          example: "1.0.0"
+        description:
+          type: string
+        providers:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              path:
+                type: string
+              description:
+                type: string
+              requiresKey:
+                type: boolean
+              rateLimit:
+                type: string
+
+    DomainHealth:
+      type: object
+      properties:
+        domain:
+          type: string
+          example: "books"
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        providers:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ProviderHealth'
+        timestamp:
+          type: string
+          format: date-time
+
+    ProviderHealth:
+      type: object
+      properties:
+        healthy:
+          type: boolean
+        latency:
+          type: integer
+          description: Latence en millisecondes
+        message:
+          type: string
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # BOOK SCHEMAS
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    BookSearchResponse:
+      type: object
+      properties:
+        meta:
+          type: object
+          properties:
+            source:
+              type: string
+              enum: [googlebooks, openlibrary]
+            query:
+              type: string
+            searchType:
+              type: string
+              enum: [text, isbn, author]
+            total:
+              type: integer
+            returned:
+              type: integer
+            pagination:
+              type: object
+              properties:
+                page:
+                  type: integer
+                pageSize:
+                  type: integer
+                totalResults:
+                  type: integer
+                hasMore:
+                  type: boolean
+            timestamp:
+              type: string
+              format: date-time
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookSummary'
+
+    BookSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID unique du livre (provider-specific)
+        type:
+          type: string
+          example: "book"
+        title:
+          type: string
+        subtitle:
+          type: string
+          nullable: true
+        authors:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              role:
+                type: string
+                default: "author"
+        publisher:
+          type: string
+          nullable: true
+        publishedDate:
+          type: string
+          nullable: true
+        year:
+          type: integer
+          nullable: true
+        categories:
+          type: array
+          items:
+            type: string
+        language:
+          type: string
+          nullable: true
+        identifiers:
+          type: object
+          properties:
+            googlebooks:
+              type: string
+              nullable: true
+            openlibrary:
+              type: string
+              nullable: true
+            isbn:
+              type: string
+              nullable: true
+            isbn10:
+              type: string
+              nullable: true
+            isbn13:
+              type: string
+              nullable: true
+        covers:
+          type: object
+          properties:
+            large:
+              type: string
+              format: uri
+              nullable: true
+            medium:
+              type: string
+              format: uri
+              nullable: true
+            small:
+              type: string
+              format: uri
+              nullable: true
+        description:
+          type: string
+          nullable: true
+        pageCount:
+          type: integer
+          nullable: true
+        url:
+          type: string
+          format: uri
+          nullable: true
+        source:
+          type: string
+          enum: [googlebooks, openlibrary]
+
+    BookDetailResponse:
+      type: object
+      properties:
+        meta:
+          type: object
+          properties:
+            source:
+              type: string
+            id:
+              type: string
+            type:
+              type: string
+            language:
+              type: string
+              nullable: true
+            timestamp:
+              type: string
+              format: date-time
+        data:
+          $ref: '#/components/schemas/BookDetail'
+
+    BookDetail:
+      allOf:
+        - $ref: '#/components/schemas/BookSummary'
+        - type: object
+          properties:
+            publishers:
+              type: array
+              items:
+                type: string
+            metadata:
+              type: object
+              description: Métadonnées additionnelles spécifiques au provider
+              properties:
+                places:
+                  type: array
+                  items:
+                    type: string
+                  description: Lieux mentionnés (Open Library)
+                times:
+                  type: array
+                  items:
+                    type: string
+                  description: Périodes temporelles (Open Library)
+                people:
+                  type: array
+                  items:
+                    type: string
+                  description: Personnages/personnes (Open Library)
+                externalLinks:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      title:
+                        type: string
+                      url:
+                        type: string
+                        format: uri
+                format:
+                  type: string
+                  description: Format physique (Open Library)
+                workId:
+                  type: string
+                  description: ID de l'œuvre parente (Open Library)
+                maturityRating:
+                  type: string
+                  description: Classification d'âge (Google Books)
+                previewLink:
+                  type: string
+                  format: uri
+                  description: Lien de prévisualisation (Google Books)
+                buyLink:
+                  type: string
+                  format: uri
+                  description: Lien d'achat (Google Books)
+                averageRating:
+                  type: number
+                  description: Note moyenne (Google Books)
+                ratingsCount:
+                  type: integer
+                  description: Nombre de notes (Google Books)
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+        timestamp:
+          type: string
+          format: date-time

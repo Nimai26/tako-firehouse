@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+
+# Environment files (variables injectées par Docker)
+.env
+.env.*
+.credentials
+!.env.example
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Tests & Dev
+tests/
+test/
+coverage/
+*.test.js
+*.spec.js
+
+# Documentation (optionnel en prod)
+# docs/
+*.md
+!README.md
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+
+# POC / Experimental
+mega-archive/

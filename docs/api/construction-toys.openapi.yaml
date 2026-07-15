@@ -1,0 +1,1783 @@
+openapi: 3.1.0
+info:
+  title: Tako API - Construction Toys
+  description: |
+    APIs pour les jouets de construction (LEGO, Playmobil, MEGA, etc.).
+    
+    Ce domaine regroupe plusieurs providers:
+    - **LEGO**: Site officiel LEGO.com via FlareSolverr (scraping)
+    - **Rebrickable**: API REST communautaire LEGO
+    - **Brickset**: API officielle LEGO avec données détaillées
+    - **Mega**: MEGA Construx (Mattel) via API Searchspring
+    - **Klickypedia**: Encyclopédie Playmobil communautaire (scraping)
+    - **Playmobil**: Site officiel Playmobil.com via FlareSolverr
+    
+    ## Authentification
+    
+    | Provider | Authentification |
+    |----------|------------------|
+    | LEGO | Aucune (FlareSolverr) |
+    | Rebrickable | API Key via `REBRICKABLE_API_KEY` |
+    | Brickset | API Key via `BRICKSET_API_KEY` |
+    | Mega | Aucune (API publique) |
+    | Klickypedia | Aucune |
+    | Playmobil | Aucune (FlareSolverr) |
+    
+    ## Rate Limits
+    
+    | Provider | Rate Limit |
+    |----------|------------|
+    | LEGO | ~18s par requête (Cloudflare) |
+    | Rebrickable | 1 req/s (gratuit) |
+    | Brickset | Non spécifié |
+    | Mega | Raisonnable (API publique) |
+    | Klickypedia | 1 req/s (respect du site) |
+    | Playmobil | ~18s par requête (Cloudflare) |
+    
+  version: 1.0.0
+  contact:
+    name: Tako API
+  license:
+    name: MIT
+    
+servers:
+  - url: http://localhost:3000
+    description: Développement local
+  - url: https://api.tako.local
+    description: Production
+
+tags:
+  - name: LEGO
+    description: Site officiel LEGO.com (FlareSolverr)
+  - name: Rebrickable
+    description: Base de données LEGO communautaire
+  - name: Brickset
+    description: Données LEGO officielles
+  - name: Mega
+    description: MEGA Construx (Mattel) - Pokemon, Halo, etc.
+  - name: Klickypedia
+    description: Encyclopédie Playmobil communautaire
+  - name: Playmobil
+    description: Site officiel Playmobil.com (FlareSolverr)
+
+paths:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # DOMAINE CONSTRUCTION-TOYS
+  # ═══════════════════════════════════════════════════════════════════════════
+  
+  /construction-toys:
+    get:
+      summary: Information sur le domaine
+      description: Retourne la liste des providers et leurs endpoints
+      tags:
+        - LEGO
+        - Rebrickable
+        - Brickset
+      responses:
+        '200':
+          description: Information sur le domaine
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  domain:
+                    type: string
+                  providers:
+                    type: array
+                    items:
+                      type: object
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PROVIDER LEGO
+  # ═══════════════════════════════════════════════════════════════════════════
+  
+  /construction-toys/lego/health:
+    get:
+      summary: État du provider LEGO
+      description: Vérifie la disponibilité de FlareSolverr
+      tags: [LEGO]
+      responses:
+        '200':
+          description: Provider disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Provider indisponible
+
+  /construction-toys/lego/search:
+    get:
+      summary: Rechercher des produits LEGO
+      description: |
+        Recherche sur le site officiel LEGO.com via FlareSolverr.
+        
+        **⚠️ Temps de réponse:** ~9 secondes (Cloudflare bypass)
+      tags: [LEGO]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Terme de recherche
+          example: millennium falcon
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: Page de résultats
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 24
+            maximum: 100
+          description: Résultats par page
+        - name: locale
+          in: query
+          schema:
+            type: string
+            default: fr-FR
+          description: Locale (fr-FR, en-US, etc.)
+      responses:
+        '200':
+          description: Résultats de recherche
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegoSearchResponse'
+
+  /construction-toys/lego/{id}:
+    get:
+      summary: Détails d'un produit LEGO
+      description: |
+        Récupère les détails complets d'un produit LEGO.
+        
+        **⚠️ Temps de réponse:** ~14-18 secondes (inclut instructions)
+      tags: [LEGO]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID du produit
+          example: "75192"
+        - name: locale
+          in: query
+          schema:
+            type: string
+            default: fr-FR
+        - name: includeInstructions
+          in: query
+          schema:
+            type: boolean
+            default: true
+          description: Inclure les manuels d'instructions
+      responses:
+        '200':
+          description: Détails du produit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegoProductResponse'
+        '404':
+          description: Produit non trouvé
+
+  /construction-toys/lego/proxy/video:
+    get:
+      summary: Proxy vidéo CDN LEGO
+      description: |
+        Télécharge une vidéo depuis le CDN LEGO en contournant le rate-limiting.
+        Seules les URLs `https://www.lego.com/cdn/cs/set/assets/blt.../*.mp4` sont autorisées (whitelist regex anti-SSRF).
+      tags: [LEGO]
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: URL CDN LEGO de la vidéo (encodée)
+          example: "https://www.lego.com/cdn/cs/set/assets/blt2765cc6c1533654d/75192_v2.mp4"
+      responses:
+        '200':
+          description: Stream vidéo MP4
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              example: 'attachment; filename="75192_v2.mp4"'
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: URL invalide ou non autorisée
+        '502':
+          description: CDN LEGO indisponible ou erreur en amont
+
+  /construction-toys/lego/instructions/{id}:
+    get:
+      summary: Manuels d'instructions LEGO
+      description: |
+        Récupère les manuels d'instructions pour un set LEGO.
+        
+        **Temps de réponse:** ~3 secondes
+      tags: [LEGO]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "75192"
+        - name: locale
+          in: query
+          schema:
+            type: string
+            default: fr-FR
+      responses:
+        '200':
+          description: Liste des manuels
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegoInstructionsResponse'
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PROVIDER REBRICKABLE
+  # ═══════════════════════════════════════════════════════════════════════════
+  
+  /construction-toys/rebrickable/health:
+    get:
+      summary: État du provider Rebrickable
+      tags: [Rebrickable]
+      responses:
+        '200':
+          description: Provider disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /construction-toys/rebrickable/search:
+    get:
+      summary: Rechercher des sets LEGO
+      description: Recherche dans la base Rebrickable (communautaire)
+      tags: [Rebrickable]
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Terme de recherche
+          example: star wars
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+        - name: themeId
+          in: query
+          schema:
+            type: integer
+          description: Filtrer par ID de thème
+          example: 246
+        - name: minYear
+          in: query
+          schema:
+            type: integer
+          description: Année minimale
+          example: 2020
+        - name: maxYear
+          in: query
+          schema:
+            type: integer
+          description: Année maximale
+        - name: minParts
+          in: query
+          schema:
+            type: integer
+          description: Nombre minimum de pièces
+        - name: maxParts
+          in: query
+          schema:
+            type: integer
+          description: Nombre maximum de pièces
+        - name: ordering
+          in: query
+          schema:
+            type: string
+            enum: [year, -year, name, -name, num_parts, -num_parts]
+            default: -year
+          description: Tri des résultats
+      responses:
+        '200':
+          description: Résultats de recherche
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+
+  /construction-toys/rebrickable/sets/{id}:
+    get:
+      summary: Détails d'un set
+      tags: [Rebrickable]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Numéro du set (ex: 75192 ou 75192-1)
+          example: "75192-1"
+        - name: includeParts
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Inclure les pièces
+        - name: includeMinifigs
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Inclure les minifigs
+        - name: maxParts
+          in: query
+          schema:
+            type: integer
+            default: 500
+          description: Nombre max de pièces à retourner
+      responses:
+        '200':
+          description: Détails du set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetDetailResponse'
+        '404':
+          description: Set non trouvé
+
+  /construction-toys/rebrickable/sets/{id}/parts:
+    get:
+      summary: Pièces d'un set
+      description: Liste toutes les pièces d'un set LEGO
+      tags: [Rebrickable]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "75192-1"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 500
+            maximum: 1000
+      responses:
+        '200':
+          description: Liste des pièces
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetPartsResponse'
+
+  /construction-toys/rebrickable/sets/{id}/minifigs:
+    get:
+      summary: Minifigures d'un set
+      tags: [Rebrickable]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "75192-1"
+      responses:
+        '200':
+          description: Liste des minifigures
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetMinifigsResponse'
+
+  /construction-toys/rebrickable/themes:
+    get:
+      summary: Liste des thèmes
+      description: Récupère tous les thèmes LEGO
+      tags: [Rebrickable]
+      parameters:
+        - name: parentId
+          in: query
+          schema:
+            type: integer
+          description: Filtrer par thème parent (pour sous-thèmes)
+      responses:
+        '200':
+          description: Liste des thèmes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemesResponse'
+
+  /construction-toys/rebrickable/colors:
+    get:
+      summary: Liste des couleurs
+      description: Récupère toutes les couleurs LEGO
+      tags: [Rebrickable]
+      responses:
+        '200':
+          description: Liste des couleurs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ColorsResponse'
+
+  /construction-toys/rebrickable/parts:
+    get:
+      summary: Rechercher des pièces
+      tags: [Rebrickable]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Terme de recherche
+          example: brick 2x4
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+      responses:
+        '200':
+          description: Liste des pièces
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartsSearchResponse'
+
+  /construction-toys/rebrickable/minifigs:
+    get:
+      summary: Rechercher des minifigures
+      tags: [Rebrickable]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          example: luke skywalker
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Liste des minifigures
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MinifigsSearchResponse'
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PROVIDER BRICKSET
+  # ═══════════════════════════════════════════════════════════════════════════
+  
+  /construction-toys/brickset/health:
+    get:
+      summary: État du provider Brickset
+      tags: [Brickset]
+      responses:
+        '200':
+          description: Provider disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /construction-toys/brickset/search:
+    get:
+      summary: Rechercher des sets LEGO
+      description: Recherche dans la base Brickset (données officielles)
+      tags: [Brickset]
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+          example: millennium falcon
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 500
+        - name: theme
+          in: query
+          schema:
+            type: string
+          description: Filtrer par nom de thème
+          example: Star Wars
+        - name: year
+          in: query
+          schema:
+            type: integer
+          description: Filtrer par année
+          example: 2024
+        - name: orderBy
+          in: query
+          schema:
+            type: string
+            enum: [Name, Number, Year, Pieces, Rating]
+            default: Name
+      responses:
+        '200':
+          description: Résultats de recherche
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+
+  /construction-toys/brickset/sets/{id}:
+    get:
+      summary: Détails d'un set
+      tags: [Brickset]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID Brickset ou numéro de set
+          example: "75192"
+        - name: lang
+          in: query
+          schema:
+            type: string
+            default: en
+      responses:
+        '200':
+          description: Détails du set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetDetailResponse'
+        '404':
+          description: Set non trouvé
+
+  /construction-toys/brickset/themes:
+    get:
+      summary: Liste des thèmes
+      tags: [Brickset]
+      responses:
+        '200':
+          description: Liste des thèmes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  count:
+                    type: integer
+                  themes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        theme:
+                          type: string
+                        setCount:
+                          type: integer
+                        subthemeCount:
+                          type: integer
+
+  /construction-toys/brickset/themes/{theme}/subthemes:
+    get:
+      summary: Sous-thèmes d'un thème
+      tags: [Brickset]
+      parameters:
+        - name: theme
+          in: path
+          required: true
+          schema:
+            type: string
+          example: Star Wars
+      responses:
+        '200':
+          description: Liste des sous-thèmes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  theme:
+                    type: string
+                  count:
+                    type: integer
+                  subthemes:
+                    type: array
+
+  /construction-toys/brickset/years:
+    get:
+      summary: Années disponibles
+      tags: [Brickset]
+      parameters:
+        - name: theme
+          in: query
+          schema:
+            type: string
+          description: Filtrer par thème
+      responses:
+        '200':
+          description: Liste des années
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  count:
+                    type: integer
+                  years:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        year:
+                          type: string
+                        setCount:
+                          type: integer
+
+  /construction-toys/brickset/recently-updated:
+    get:
+      summary: Sets récemment mis à jour
+      tags: [Brickset]
+      parameters:
+        - name: minutesAgo
+          in: query
+          schema:
+            type: integer
+            default: 10080
+          description: Minutes depuis la mise à jour (défaut 7 jours)
+      responses:
+        '200':
+          description: Liste des sets mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PROVIDER MEGA CONSTRUX
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  /construction-toys/mega/health:
+    get:
+      summary: État du provider Mega
+      description: Vérifie la disponibilité de l'API Searchspring
+      tags: [Mega]
+      responses:
+        '200':
+          description: Provider disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Provider indisponible
+
+  /construction-toys/mega/search:
+    get:
+      summary: Rechercher des produits MEGA Construx
+      description: |
+        Recherche via l'API Searchspring.
+        Marques disponibles: Pokemon, Halo, Hot Wheels, Barbie, Masters of the Universe, etc.
+      tags: [Mega]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Terme de recherche
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 24
+            maximum: 100
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [relevance, price_asc, price_desc, newest]
+            default: relevance
+        - name: locale
+          in: query
+          schema:
+            type: string
+            default: fr-FR
+          description: Locale (fr-FR, en-US, de-DE, etc.)
+      responses:
+        '200':
+          description: Résultats de recherche
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MegaSearchResponse'
+
+  /construction-toys/mega/{id}:
+    get:
+      summary: Détails d'un produit MEGA
+      tags: [Mega]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: SKU du produit (ex JGG71)
+        - name: locale
+          in: query
+          schema:
+            type: string
+            default: fr-FR
+      responses:
+        '200':
+          description: Détails du produit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MegaProductResponse'
+        '404':
+          description: Produit non trouvé
+
+  /construction-toys/mega/instructions/{sku}:
+    get:
+      summary: Instructions de montage MEGA
+      tags: [Mega]
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema:
+            type: string
+          description: SKU du produit
+      responses:
+        '200':
+          description: Informations sur les instructions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MegaInstructionsResponse'
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PROVIDER KLICKYPEDIA
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  /construction-toys/klickypedia/health:
+    get:
+      summary: État du provider Klickypedia
+      description: Vérifie la disponibilité de l'encyclopédie
+      tags: [Klickypedia]
+      responses:
+        '200':
+          description: Provider disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Provider indisponible
+
+  /construction-toys/klickypedia/search:
+    get:
+      summary: Rechercher des sets Playmobil
+      description: |
+        Recherche dans l'encyclopédie communautaire Klickypedia.
+        Données non commerciales (pas de prix).
+      tags: [Klickypedia]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Terme de recherche
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 24
+            maximum: 100
+        - name: lang
+          in: query
+          schema:
+            type: string
+            enum: [fr, es, de, en]
+            default: fr
+          description: Langue des résultats
+      responses:
+        '200':
+          description: Résultats de recherche
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KlickypediaSearchResponse'
+
+  /construction-toys/klickypedia/{id}:
+    get:
+      summary: Détails d'un set Playmobil
+      description: Récupère les détails depuis Klickypedia avec traductions multilingues
+      tags: [Klickypedia]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^\d+(-[a-z]{2,3})?$'
+          description: ID du set (ex 71148)
+        - name: lang
+          in: query
+          schema:
+            type: string
+            enum: [fr, es, de, en]
+            default: fr
+      responses:
+        '200':
+          description: Détails du set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KlickypediaProductResponse'
+        '404':
+          description: Set non trouvé
+
+  /construction-toys/klickypedia/instructions/{productId}:
+    get:
+      summary: Instructions de montage Playmobil
+      description: Vérifie la disponibilité sur le CDN Playmobil officiel
+      tags: [Klickypedia]
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^\d+(-[a-z]{2,3})?$'
+          description: ID du produit
+      responses:
+        '200':
+          description: Informations sur les instructions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaymobilInstructionsResponse'
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PROVIDER PLAYMOBIL
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  /construction-toys/playmobil/health:
+    get:
+      summary: État du provider Playmobil
+      description: Vérifie la disponibilité de Playmobil.com et FlareSolverr
+      tags: [Playmobil]
+      responses:
+        '200':
+          description: Provider disponible
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/HealthResponse'
+                  - type: object
+                    properties:
+                      details:
+                        type: object
+                        properties:
+                          playmobil:
+                            type: boolean
+                          flaresolverr:
+                            type: boolean
+        '503':
+          description: Provider indisponible
+
+  /construction-toys/playmobil/search:
+    get:
+      summary: Rechercher des produits Playmobil
+      description: |
+        ⚠️ **Lent (~18s)** - Utilise FlareSolverr pour bypasser Cloudflare.
+        
+        Recherche sur le site officiel Playmobil.com avec prix et disponibilité.
+      tags: [Playmobil]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Terme de recherche
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 24
+            maximum: 100
+        - name: lang
+          in: query
+          schema:
+            type: string
+            default: fr-FR
+          description: Locale (fr-FR, en-US, de-DE, es-ES, it-IT, etc.)
+      responses:
+        '200':
+          description: Résultats de recherche
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaymobilSearchResponse'
+
+  /construction-toys/playmobil/{id}:
+    get:
+      summary: Détails d'un produit Playmobil
+      description: |
+        ⚠️ **Très lent (~18-36s)** - Nécessite recherche + scraping via FlareSolverr.
+      tags: [Playmobil]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4,6}$'
+          description: ID du produit (4-6 chiffres, ex 71148)
+        - name: lang
+          in: query
+          schema:
+            type: string
+            default: fr-FR
+      responses:
+        '200':
+          description: Détails du produit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaymobilProductResponse'
+        '404':
+          description: Produit non trouvé
+
+  /construction-toys/playmobil/instructions/{productId}:
+    get:
+      summary: Instructions de montage Playmobil
+      description: |
+        ✅ **Rapide** - Ne nécessite pas FlareSolverr (accès direct au CDN).
+      tags: [Playmobil]
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4,6}$'
+          description: ID du produit
+      responses:
+        '200':
+          description: Informations sur les instructions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaymobilInstructionsResponse'
+
+components:
+  schemas:
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SCHEMAS COMMUNS
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    HealthResponse:
+      type: object
+      properties:
+        healthy:
+          type: boolean
+        latency:
+          type: integer
+          description: Latence en ms
+        message:
+          type: string
+        provider:
+          type: string
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalResults:
+          type: integer
+        totalPages:
+          type: integer
+        hasMore:
+          type: boolean
+
+    SearchResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        provider:
+          type: string
+        domain:
+          type: string
+        query:
+          type: string
+        total:
+          type: integer
+        count:
+          type: integer
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConstructToy'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    ConstructToy:
+      type: object
+      description: Jouet de construction normalisé
+      properties:
+        type:
+          type: string
+          enum: [construct_toy]
+        source:
+          type: string
+          description: Provider source (lego, rebrickable, brickset)
+        sourceId:
+          type: string
+        name:
+          type: string
+        name_original:
+          type: string
+        description:
+          type: string
+        year:
+          type: integer
+        image:
+          type: string
+          format: uri
+        src_url:
+          type: string
+          format: uri
+        detailUrl:
+          type: string
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SCHEMAS LEGO
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    LegoSearchResponse:
+      allOf:
+        - $ref: '#/components/schemas/SearchResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/LegoProduct'
+
+    LegoProduct:
+      type: object
+      properties:
+        sourceId:
+          type: string
+          example: "75192"
+        name:
+          type: string
+          example: Millennium Falcon
+        theme:
+          type: string
+          example: Star Wars
+        price:
+          type: object
+          properties:
+            amount:
+              type: number
+              example: 849.99
+            currency:
+              type: string
+              example: EUR
+        pieces:
+          type: integer
+          example: 7541
+        ageRange:
+          type: object
+          properties:
+            min:
+              type: integer
+              example: 18
+        availability:
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [available, coming_soon, sold_out, retired]
+        rating:
+          type: object
+          properties:
+            value:
+              type: number
+            count:
+              type: integer
+
+    LegoProductResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        provider:
+          type: string
+        data:
+          allOf:
+            - $ref: '#/components/schemas/LegoProduct'
+            - type: object
+              properties:
+                images:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      url:
+                        type: string
+                      type:
+                        type: string
+                videos:
+                  type: array
+                  description: Vidéos du produit avec URL directe et URL proxy
+                  items:
+                    type: object
+                    properties:
+                      url:
+                        type: string
+                        format: uri
+                        description: URL directe CDN LEGO
+                      proxyUrl:
+                        type: string
+                        description: URL proxy Tako (recommandé pour le téléchargement)
+                      filename:
+                        type: string
+                        description: Nom du fichier vidéo
+                instructions:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/LegoInstruction'
+
+    LegoInstruction:
+      type: object
+      properties:
+        id:
+          type: string
+        description:
+          type: string
+        pdfUrl:
+          type: string
+          format: uri
+        sequence:
+          type: integer
+
+    LegoInstructionsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        provider:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        manuals:
+          type: array
+          items:
+            $ref: '#/components/schemas/LegoInstruction'
+        url:
+          type: string
+          format: uri
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SCHEMAS REBRICKABLE
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    SetDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        provider:
+          type: string
+        data:
+          $ref: '#/components/schemas/ConstructToy'
+
+    SetPartsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        provider:
+          type: string
+        setNum:
+          type: string
+        count:
+          type: integer
+        parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Part'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    Part:
+      type: object
+      properties:
+        partNum:
+          type: string
+        name:
+          type: string
+        categoryId:
+          type: integer
+        imageUrl:
+          type: string
+          format: uri
+        colorId:
+          type: integer
+        colorName:
+          type: string
+        colorRgb:
+          type: string
+          example: "#212121"
+        quantity:
+          type: integer
+        isSpare:
+          type: boolean
+        elementId:
+          type: string
+
+    SetMinifigsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        provider:
+          type: string
+        setNum:
+          type: string
+        count:
+          type: integer
+        minifigs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Minifig'
+
+    Minifig:
+      type: object
+      properties:
+        figNum:
+          type: string
+        name:
+          type: string
+        quantity:
+          type: integer
+        numParts:
+          type: integer
+        imageUrl:
+          type: string
+          format: uri
+
+    ThemesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        provider:
+          type: string
+        count:
+          type: integer
+        themes:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              parentId:
+                type: integer
+                nullable: true
+
+    ColorsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        provider:
+          type: string
+        count:
+          type: integer
+        colors:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              rgb:
+                type: string
+                example: "#212121"
+              isTrans:
+                type: boolean
+
+    PartsSearchResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        provider:
+          type: string
+        query:
+          type: string
+        count:
+          type: integer
+        parts:
+          type: array
+          items:
+            type: object
+            properties:
+              partNum:
+                type: string
+              name:
+                type: string
+              categoryId:
+                type: integer
+              imageUrl:
+                type: string
+              partUrl:
+                type: string
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    MinifigsSearchResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        provider:
+          type: string
+        query:
+          type: string
+        count:
+          type: integer
+        minifigs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Minifig'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SCHEMAS MEGA CONSTRUX
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    MegaSearchResponse:
+      type: object
+      properties:
+        query:
+          type: string
+        total:
+          type: integer
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MegaProduct'
+        source:
+          type: string
+          example: mega
+
+    MegaProduct:
+      type: object
+      properties:
+        sourceId:
+          type: string
+          example: JGG71
+        provider:
+          type: string
+          example: mega
+        brand:
+          type: string
+          example: Mega Construx
+        name:
+          type: string
+        productCode:
+          type: string
+        slug:
+          type: string
+        src_url:
+          type: string
+          format: uri
+        src_image_url:
+          type: string
+          format: uri
+        price:
+          $ref: '#/components/schemas/Price'
+        franchise:
+          type: string
+          example: Pokemon
+        pieces:
+          type: integer
+        rating:
+          type: object
+          properties:
+            value:
+              type: number
+            count:
+              type: integer
+
+    MegaProductResponse:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/MegaProduct'
+        - type: object
+          properties:
+            description:
+              type: string
+            localizedName:
+              type: string
+            images:
+              type: array
+              items:
+                type: object
+                properties:
+                  url:
+                    type: string
+                  type:
+                    type: string
+            attributes:
+              type: object
+              properties:
+                ageRange:
+                  type: string
+                dimensions:
+                  type: string
+                weight:
+                  type: string
+            availability:
+              type: object
+              properties:
+                status:
+                  type: string
+                text:
+                  type: string
+
+    MegaInstructionsResponse:
+      type: object
+      properties:
+        productId:
+          type: string
+        available:
+          type: boolean
+        url:
+          type: string
+          format: uri
+          nullable: true
+        format:
+          type: string
+          nullable: true
+        source:
+          type: string
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SCHEMAS KLICKYPEDIA
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    KlickypediaSearchResponse:
+      type: object
+      properties:
+        query:
+          type: string
+        total:
+          type: integer
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+        lang:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/KlickypediaProduct'
+        source:
+          type: string
+          example: klickypedia
+        note:
+          type: string
+          example: Encyclopédie Playmobil communautaire - données non commerciales
+
+    KlickypediaProduct:
+      type: object
+      properties:
+        sourceId:
+          type: string
+          example: "71148"
+        provider:
+          type: string
+          example: klickypedia
+        brand:
+          type: string
+          example: Playmobil
+        name:
+          type: string
+        productCode:
+          type: string
+        slug:
+          type: string
+        src_url:
+          type: string
+          format: uri
+        src_image_url:
+          type: string
+          format: uri
+        released:
+          type: integer
+          nullable: true
+          example: 2023
+        discontinued:
+          type: integer
+          nullable: true
+
+    KlickypediaProductResponse:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/KlickypediaProduct'
+        - type: object
+          properties:
+            localizedName:
+              type: string
+            translations:
+              type: object
+              additionalProperties:
+                type: string
+              example:
+                fr: pyramide astérix
+                en: asterix pyramid
+                de: Asterix Pyramide
+                es: pirámide de astérix
+            description:
+              type: string
+              nullable: true
+            theme:
+              type: string
+              example: Asterix
+            format:
+              type: string
+              example: Standard Box
+            tags:
+              type: array
+              items:
+                type: string
+            figureCount:
+              type: integer
+              nullable: true
+            images:
+              type: array
+              items:
+                type: object
+                properties:
+                  url:
+                    type: string
+                  type:
+                    type: string
+            instructions:
+              $ref: '#/components/schemas/PlaymobilInstructionsResponse'
+              nullable: true
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SCHEMAS PLAYMOBIL
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    PlaymobilSearchResponse:
+      type: object
+      properties:
+        query:
+          type: string
+        total:
+          type: integer
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+        lang:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaymobilProduct'
+        source:
+          type: string
+          example: playmobil
+        note:
+          type: string
+          example: Site officiel Playmobil - données commerciales
+
+    PlaymobilProduct:
+      type: object
+      properties:
+        sourceId:
+          type: string
+          example: "71148"
+        provider:
+          type: string
+          example: playmobil
+        brand:
+          type: string
+          example: Playmobil
+        name:
+          type: string
+        productCode:
+          type: string
+        slug:
+          type: string
+        src_url:
+          type: string
+          format: uri
+        src_image_url:
+          type: string
+          format: uri
+        price:
+          $ref: '#/components/schemas/Price'
+        discountPrice:
+          $ref: '#/components/schemas/Price'
+          nullable: true
+        discount:
+          type: integer
+          nullable: true
+          description: Pourcentage de réduction
+        category:
+          type: string
+          nullable: true
+
+    PlaymobilProductResponse:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/PlaymobilProduct'
+        - type: object
+          properties:
+            description:
+              type: string
+              nullable: true
+            currency:
+              type: string
+              example: EUR
+            attributes:
+              type: object
+              properties:
+                pieceCount:
+                  type: integer
+                  nullable: true
+                ageRange:
+                  type: string
+                  nullable: true
+                canAddToBag:
+                  type: boolean
+            images:
+              type: array
+              items:
+                type: object
+                properties:
+                  url:
+                    type: string
+                  type:
+                    type: string
+                  width:
+                    type: integer
+                    nullable: true
+                  height:
+                    type: integer
+                    nullable: true
+            instructions:
+              $ref: '#/components/schemas/PlaymobilInstructionsResponse'
+              nullable: true
+
+    PlaymobilInstructionsResponse:
+      type: object
+      properties:
+        productId:
+          type: string
+        available:
+          type: boolean
+        url:
+          type: string
+          format: uri
+          nullable: true
+        format:
+          type: string
+          nullable: true
+          example: PDF
+        source:
+          type: string
+          example: playmobil
+        note:
+          type: string
+          nullable: true
