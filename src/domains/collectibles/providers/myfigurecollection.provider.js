@@ -49,7 +49,9 @@ async function fetchHtml(url) {
  */
 export async function searchMFC(query, options = {}) {
   const max = options.max || DEFAULT_MAX;
-  const url = `${BASE_URL}/?_tab=item&keywords=${encodeURIComponent(query)}`;
+  // ⚠️ le paramètre de recherche filtrant est `_tb=item` (et NON `_tab=item`, qui renvoie les
+  // items par défaut sans filtrer).
+  const url = `${BASE_URL}/?_tb=item&keywords=${encodeURIComponent(query)}`;
   logger.info(`[MFC] search "${query}"`);
   const html = await fetchHtml(url);
   const $ = load(html);
