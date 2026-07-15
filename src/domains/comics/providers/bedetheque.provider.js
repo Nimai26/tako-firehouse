@@ -1152,30 +1152,34 @@ export class BedethequeProvider extends BaseProvider {
     const urlMatch = html.match(/og:url"[^>]*content="([^"]+)"/i);
     serie.url = urlMatch ? urlMatch[1] : `${BEDETHEQUE_BASE_URL}/serie/index/s/${serieId}`;
 
-    // Genre/Style
-    const styleMatch = html.match(/Genre[^:]*:\s*<[^>]*>([^<]+)/i);
+    // Genre/Style (structure 2026 : <span class="style-serie">Humour</span>)
+    const styleMatch = html.match(/<span class="style-serie">([^<]+)<\/span>/i);
     serie.genre = styleMatch ? this.cleanHtml(styleMatch[1]) : null;
 
-    // Statut
-    const statutMatch = html.match(/Statut[^:]*:\s*([^<\n]+)/i);
+    // Statut / parution (<span class="parution-serie">Série en cours</span>)
+    const statutMatch = html.match(/<span class="parution-serie">([^<]+)<\/span>/i);
     serie.status = statutMatch ? this.cleanHtml(statutMatch[1]) : null;
 
-    // Première parution
-    const firstDateMatch = html.match(/Première parution[^:]*:\s*([^<\n]+)/i);
+    // Première parution : libellé explicite, sinon 1re année de dépôt légal repérée
+    const firstDateMatch = html.match(/Première parution[^:]*:\s*([^<\n]+)/i)
+      || html.match(/D[ée]p[ôo]t l[ée]gal[^:]*:\s*(\d{4})/i);
     serie.firstPublished = firstDateMatch ? this.cleanHtml(firstDateMatch[1]) : null;
 
-    // Éditeur principal
-    const editeurMatch = html.match(/[EÉ]diteur[^:]*:\s*<[^>]*>([^<]+)/i);
+    // Éditeur principal (<span itemprop="publisher">Dargaud</span>)
+    const editeurMatch = html.match(/<span itemprop="publisher">([^<]+)<\/span>/i);
     serie.publisher = editeurMatch ? this.cleanHtml(editeurMatch[1]) : null;
 
-    // Auteurs
+    // Auteurs : liens /auteur-<id>-... avec le nom dans title="Voir la fiche de <Nom>"
     serie.authors = [];
-    const authorPattern = /href="[^"]*auteur-(\d+)[^"]*">([^<]+)</gi;
+    const authorPattern = /href="[^"]*\/auteur-(\d+)-[^"]*"[^>]*title="Voir la fiche de ([^"]+)"/gi;
     let match;
     const seenAuthors = new Set();
     while ((match = authorPattern.exec(html)) !== null) {
       const authorId = match[1];
       const authorName = this.cleanHtml(match[2]);
+      // bedetheque liste aussi des méta-infos techniques entre chevrons
+      // (« <Quadrichromie> », « <Noir & Blanc> »…) : ce ne sont pas des auteurs.
+      if (authorName.startsWith('<') || authorName.startsWith('&lt;')) continue;
       if (!seenAuthors.has(authorId)) {
         seenAuthors.add(authorId);
         serie.authors.push({
