@@ -11,6 +11,7 @@ import colekaRoutes from './coleka.routes.js';
 import luluberluRoutes from './luluberlu.routes.js';
 import transformerlandRoutes from './transformerland.routes.js';
 import carddassRoutes from './carddass.routes.js';
+import myfigurecollectionRoutes from './myfigurecollection.routes.js';
 import { createAmazonAliasRouter } from '../../ecommerce/routes/amazon-alias.factory.js';
 import { logger } from '../../../shared/utils/logger.js';
 
@@ -21,6 +22,7 @@ router.use('/coleka', colekaRoutes);
 router.use('/luluberlu', luluberluRoutes);
 router.use('/transformerland', transformerlandRoutes);
 router.use('/carddass', carddassRoutes);
+router.use('/myfigurecollection', myfigurecollectionRoutes);
 router.use('/amazon', createAmazonAliasRouter({
   domain: 'collectibles',
   category: 'toys',
@@ -156,11 +158,12 @@ router.get('/health', async (req, res) => {
       import('../providers/coleka.provider.js').then(m => m.healthCheck()),
       import('../providers/luluberlu.provider.js').then(m => m.healthCheck()),
       import('../providers/transformerland.provider.js').then(m => m.healthCheck()),
-      import('../providers/carddass.provider.js').then(m => m.healthCheck())
+      import('../providers/carddass.provider.js').then(m => m.healthCheck()),
+      import('../providers/myfigurecollection.provider.js').then(m => m.healthCheck())
     ]);
-    
+
     const results = healthChecks.map((result, index) => {
-      const providerNames = ['coleka', 'lulu-berlu', 'transformerland', 'carddass'];
+      const providerNames = ['coleka', 'lulu-berlu', 'transformerland', 'carddass', 'myfigurecollection'];
       return {
         provider: providerNames[index],
         status: result.status === 'fulfilled' ? result.value.status : 'unhealthy',
