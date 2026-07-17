@@ -64,12 +64,14 @@ function decodeHtmlEntities(text) {
  * @returns {string} Formatted term
  */
 function formatPaninimaniaTerm(term) {
+  // garde les ESPACES (les coller \u2014 \u00ab super mario \u00bb \u2192 \u00ab supermario \u00bb \u2014 casse la recherche du site) ;
+  // ils sont encod\u00e9s dans l'URL de recherche.
   return term
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
-    .replace(/\s+/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -189,7 +191,7 @@ export async function searchPaninimania(term, options = {}) {
       let totalPages = 1;
       
       while (allResults.length < maxResults) {
-        let searchUrl = `${PANINIMANIA_BASE_URL}/?pag=cid508&idf=15&idd=all&ids=111_${currentTerm}`;
+        let searchUrl = `${PANINIMANIA_BASE_URL}/?pag=cid508&idf=15&idd=all&ids=111_${encodeURIComponent(currentTerm)}`;
         if (currentPage > 1) {
           searchUrl += `&npa=${currentPage}`;
         }
