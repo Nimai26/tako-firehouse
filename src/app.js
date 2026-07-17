@@ -199,6 +199,7 @@ import collectiblesRouter from './domains/collectibles/routes/index.js';
 import stickerAlbumsRouter from './domains/sticker-albums/routes/index.js';
 import { router as tcgRouter } from './domains/tcg/index.js';
 import ecommerceRouter from './domains/ecommerce/index.js';
+import rcRouter from './domains/rc/routes/index.js';
 import cacheRouter from './core/routes/cache.routes.js';
 
 app.use('/api/construction-toys', constructionToysRouter);
@@ -213,6 +214,7 @@ app.use('/api/collectibles', collectiblesRouter);
 app.use('/api/sticker-albums', stickerAlbumsRouter);
 app.use('/api/tcg', tcgRouter);
 app.use('/api/ecommerce', ecommerceRouter);
+app.use('/api/rc', rcRouter);
 app.use('/api/cache', cacheRouter);
 
 // ===========================================
