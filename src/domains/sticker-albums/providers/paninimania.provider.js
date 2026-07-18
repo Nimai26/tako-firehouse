@@ -64,15 +64,16 @@ function decodeHtmlEntities(text) {
  * @returns {string} Formatted term
  */
 function formatPaninimaniaTerm(term) {
-  // garde les ESPACES (les coller \u2014 \u00ab super mario \u00bb \u2192 \u00ab supermario \u00bb \u2014 casse la recherche du site) ;
-  // ils sont encod\u00e9s dans l'URL de recherche.
+  // Le site construit la recherche via ids=111_<mots-cles> (JS changement_ids5 -> abcformat(kwd,"_")) :
+  // minuscules, accents retires, non-alphanumeriques -> separateur, mots JOINTS par "_".
+  // Ex: \u00ab Super Mario \u00bb -> \u00ab super_mario \u00bb (ni espace/%20, ni collage \u00ab supermario \u00bb : les deux cassent).
   return term
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/\s+/g, '_')
+    .replace(/^_+|_+$/g, '');
 }
 
 /**
@@ -191,7 +192,8 @@ export async function searchPaninimania(term, options = {}) {
       let totalPages = 1;
       
       while (allResults.length < maxResults) {
-        let searchUrl = `${PANINIMANIA_BASE_URL}/?pag=cid508&idf=15&idd=all&ids=111_${encodeURIComponent(currentTerm)}`;
+        // currentTerm est déjà normalisé en [a-z0-9_] : PAS d'encodeURIComponent (l'espace→%20 casse ids=111_)
+        let searchUrl = `${PANINIMANIA_BASE_URL}/?pag=cid508&idf=15&idd=all&ids=111_${currentTerm}`;
         if (currentPage > 1) {
           searchUrl += `&npa=${currentPage}`;
         }
