@@ -54,6 +54,40 @@ function decodeHtmlEntities(text) {
   return text.replace(/&[#\w]+;/g, (entity) => entities[entity] || entity);
 }
 
+// Parse les blocs <div class="ArchiveGroup"> d'une fiche guide : chaque groupe a un
+// <p class="ArchiveGroupName"> (ex « Set Accessories », « Variants ») et une série de
+// <div class="ArchiveToyImg"> (schema.org Product) = les pièces. Renvoie
+// [{ group, items:[{ name, image, quantity, title }] }]. Sert à extraire la liste
+// STRUCTURÉE d'accessoires d'un coffret (rampes, planchers, barreaux… d'un Command Centre).
+function _parseArchiveGroups(html) {
+  const groups = [];
+  const nameRe = /<p class="ArchiveGroupName">([^<]+)<\/p>/gi;
+  const markers = [];
+  let m;
+  while ((m = nameRe.exec(html)) !== null) {
+    markers.push({ name: decodeHtmlEntities(m[1].trim()), start: m.index });
+  }
+  for (let i = 0; i < markers.length; i++) {
+    const seg = html.slice(markers[i].start, i + 1 < markers.length ? markers[i + 1].start : html.length);
+    const items = [];
+    const toyRe = /<div class="ArchiveToyImg"[\s\S]*?<meta itemprop="name" content="([^"]*)"[\s\S]*?<meta itemprop="image" content="([^"]*)"[\s\S]*?<div class="ToyDesc-Title">([\s\S]*?)<\/div>/gi;
+    let t;
+    while ((t = toyRe.exec(seg)) !== null) {
+      let img = (t[2] || '').trim();
+      if (img && !img.startsWith('http')) img = `${TRANSFORMERLAND_BASE_URL}${img}`;
+      const title = decodeHtmlEntities(t[3].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+      const qm = title.match(/\(x(\d+)\)/i);
+      const quantity = qm ? parseInt(qm[1], 10) : 1;
+      // nom propre : retire le suffixe « (xN) » / « (Part of Figure) »
+      const name = title.replace(/\s*\((?:x\d+|Part of Figure)\)\s*$/i, '').trim()
+        || decodeHtmlEntities((t[1] || '').trim());
+      if (name) items.push({ name, image: img || null, quantity, title });
+    }
+    if (items.length) groups.push({ group: markers[i].name, items });
+  }
+  return groups;
+}
+
 /**
  * Search on Transformerland
  * @param {string} query - Search term
@@ -266,6 +300,7 @@ export async function getTransformerlandDetails(itemId, options = {}) {
         url: itemUrl,
         name: null,
         images: [],
+        accessories: [],
         instructions: [],
         specs: [],
         description: null,
@@ -333,10 +368,21 @@ export async function getTransformerlandDetails(itemId, options = {}) {
           item.images.push(mainImg);
         }
         
+        // Accessoires structurés (blocs ArchiveGroup « Set Accessories »/« Parts »…)
+        // On les extrait AVANT la galerie pour EXCLURE leurs vignettes des images de l'item
+        // (sinon rampes/planchers/barreaux noient la vraie photo du jouet).
+        const seenImages = new Set(item.images);
+        for (const grp of _parseArchiveGroups(html)) {
+          if (!/accessor|parts|set contents|contents|weapons|accessoires/i.test(grp.group)) continue;
+          for (const acc of grp.items) {
+            item.accessories.push({ name: acc.name, quantity: acc.quantity, image: acc.image, group: grp.group });
+            if (acc.image) seenImages.add(acc.image);  // ne pas la remettre dans images
+          }
+        }
+
         // Extract reference images
         const refImagePattern = /<a\s+href="(\/image\/reference_images\/[^"]+)"/gi;
         let refImgMatch;
-        const seenImages = new Set(item.images);
         while ((refImgMatch = refImagePattern.exec(html)) !== null) {
           let imgUrl = `${TRANSFORMERLAND_BASE_URL}${refImgMatch[1]}`;
           if (!seenImages.has(imgUrl)) {

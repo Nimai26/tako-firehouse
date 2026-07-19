@@ -161,6 +161,7 @@ export function normalizeDetails(data) {
       manufacturer: data.manufacturer || null,
       instructions: data.instructions && data.instructions.length > 0 ? data.instructions : null,
       specs: data.specs && data.specs.length > 0 ? data.specs : null,
+      accessories: data.accessories && data.accessories.length > 0 ? data.accessories : null,
       attributes: data.attributes || {}
     }
   };
