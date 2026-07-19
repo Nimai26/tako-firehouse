@@ -40,25 +40,44 @@ function enrich(row) {
 
 // ── API ──────────────────────────────────────────────────────────────────────
 
-/** Recherche par nom/slug, filtre catégorie optionnel. */
+/**
+ * Recherche accent-insensible (unaccent) et par MOTS : un nom français composé (« Tortues Ninja
+ * Léonardo ») matche l'entrée anglaise « Leonardo » via le mot-clé commun (le personnage). Résultats
+ * classés par pertinence (phrase entière > nb de mots trouvés).
+ */
 export async function search(q, { category = null, limit = 30, offset = 0 } = {}) {
-  const where = [];
+  const raw = (q || '').trim();
+  const words = [...new Set(
+    raw.toLowerCase().split(/[^a-z0-9À-ɏ]+/i).filter((w) => w.length >= 3)
+  )];
+  const conds = [];
+  const scoreParts = [];
   const params = [];
   let i = 1;
-  if (q && q.trim()) {
-    where.push(`(name ILIKE $${i} OR slug ILIKE $${i})`);
-    params.push(`%${q.trim()}%`);
+  if (raw) {
+    conds.push(`unaccent(name) ILIKE unaccent($${i})`);
+    scoreParts.push(`(CASE WHEN unaccent(name) ILIKE unaccent($${i}) THEN 5 ELSE 0 END)`);
+    params.push(`%${raw}%`);
     i++;
   }
+  for (const w of words) {
+    conds.push(`(unaccent(name) ILIKE unaccent($${i}) OR unaccent(slug) ILIKE unaccent($${i}))`);
+    scoreParts.push(`(CASE WHEN unaccent(name) ILIKE unaccent($${i}) OR unaccent(slug) ILIKE unaccent($${i}) THEN 1 ELSE 0 END)`);
+    params.push(`%${w}%`);
+    i++;
+  }
+  const where = [];
+  if (conds.length) where.push(`(${conds.join(' OR ')})`);
   if (category) {
     where.push(`categories @> $${i}::jsonb`);
     params.push(JSON.stringify([category]));
     i++;
   }
   const wsql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const score = scoreParts.length ? scoreParts.join(' + ') : '0';
   const totalRow = await queryOne(`SELECT COUNT(*)::int AS n FROM cubeecraft_products ${wsql}`, params);
   const rows = await queryAll(
-    `SELECT * FROM cubeecraft_products ${wsql} ORDER BY name LIMIT $${i} OFFSET $${i + 1}`,
+    `SELECT *, (${score}) AS _score FROM cubeecraft_products ${wsql} ORDER BY _score DESC, name LIMIT $${i} OFFSET $${i + 1}`,
     [...params, limit, offset]
   );
   return {
