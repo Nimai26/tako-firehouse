@@ -63,7 +63,34 @@ function decodeHtmlEntities(text) {
  * @param {boolean} options.autoTrad - Enable automatic translation
  * @returns {Promise<object>} Search results
  */
+// Variantes de requête : titre complet, puis sans le 1er mot (souvent la marque/ligne : « GoBots »),
+// puis sans le dernier, puis le mot le plus significatif — pour matcher les items rangés sous un
+// parent (« GoBots Command Center » → « Command Center »). Renvoie la 1re variante non vide.
+function _queryVariants(query) {
+  const words = (query || '').trim().split(/\s+/).filter(Boolean);
+  const v = [query];
+  if (words.length >= 2) {
+    v.push(words.slice(1).join(' '));      // sans le 1er mot
+    v.push(words.slice(0, -1).join(' '));  // sans le dernier
+  }
+  if (words.length >= 3) v.push(words.slice(1, -1).join(' '));  // milieu
+  const longest = [...words].sort((a, b) => b.length - a.length)[0];
+  if (longest && longest.length >= 4) v.push(longest);
+  return [...new Set(v.filter(Boolean))];
+}
+
 export async function searchTransformerland(query, options = {}) {
+  const variants = _queryVariants(query);
+  let last = null;
+  for (const q of variants) {
+    const res = await _searchNames(q, options);
+    if (res && res.count > 0) return { ...res, query, matchedTerm: q };
+    last = res;
+  }
+  return last || { query, count: 0, results: [], source: 'transformerland' };
+}
+
+async function _searchNames(query, options = {}) {
   const {
     maxResults = DEFAULT_MAX_RESULTS,
     lang = 'en',
