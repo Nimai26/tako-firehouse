@@ -419,8 +419,10 @@ export async function getPaninimaniAlbumDetails(albumId, options = {}) {
           checklistRaw = checklistText;
         }
         
-        // Parse checklist (numbers only)
-        const parts = checklistRaw.split(/[,;]/);
+        // Parse checklist (numbers only). Split aussi sur « + » : une checklist du type
+        // « 1 à 216 + cartes éditions limitées » gardait sinon « 1 à 216 + … » d'un bloc, et
+        // l'ancre $ du range match échouait → items vide (bug albums Topps « X à N + … »).
+        const parts = checklistRaw.split(/[,;+]/);
         
         for (const part of parts) {
           // Strip parenthetical suffixes like "(sur 495)"
