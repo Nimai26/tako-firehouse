@@ -200,6 +200,7 @@ import stickerAlbumsRouter from './domains/sticker-albums/routes/index.js';
 import { router as tcgRouter } from './domains/tcg/index.js';
 import ecommerceRouter from './domains/ecommerce/index.js';
 import rcRouter from './domains/rc/routes/index.js';
+import papercraftRouter from './domains/papercraft/routes.js';
 import cacheRouter from './core/routes/cache.routes.js';
 
 app.use('/api/construction-toys', constructionToysRouter);
@@ -215,6 +216,7 @@ app.use('/api/sticker-albums', stickerAlbumsRouter);
 app.use('/api/tcg', tcgRouter);
 app.use('/api/ecommerce', ecommerceRouter);
 app.use('/api/rc', rcRouter);
+app.use('/api/papercraft', papercraftRouter);
 app.use('/api/cache', cacheRouter);
 
 // ===========================================
