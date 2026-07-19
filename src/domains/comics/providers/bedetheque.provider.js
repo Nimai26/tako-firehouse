@@ -649,7 +649,7 @@ export class BedethequeProvider extends BaseProvider {
    * @param {string} serieId - ID de la série
    */
   async getSerieAlbums(serieId, options = {}) {
-    const { maxResults = 100 } = options;
+    const { maxResults = 5000 } = options;   // la page série liste TOUS les tomes → ne pas tronquer
 
     try {
       this.log.debug(`Albums de la série: ${serieId}`);
@@ -739,7 +739,7 @@ export class BedethequeProvider extends BaseProvider {
     // Ex: BD-Wonder-Woman-Deesse-de-la-guerre-Tome-1-Insurrection-269516.html
     // On capture le slug complet et l'ID numérique final
     const albumPattern = /href="([^"]*BD-(.+?)-(\d+)\.html)"/gi;
-    
+
     let match;
     const seen = new Set();
 

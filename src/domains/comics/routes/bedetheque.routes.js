@@ -233,14 +233,16 @@ router.get('/serie/:id', asyncHandler(async (req, res) => {
  */
 router.get('/serie/:id/albums', asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { maxResults = '100' } = req.query;
+  // la page série liste TOUS les tomes en une requête → défaut élevé pour ne pas tronquer les
+  // grosses séries (ex « Mickey club du livre » = 452 albums, plafonnées à 100 auparavant).
+  const { maxResults = '5000' } = req.query;
 
   if (!id) {
     throw new ValidationError('L\'ID de la série est requis');
   }
 
   const result = await provider.getSerieAlbums(id, {
-    maxResults: parseInt(maxResults) || 100
+    maxResults: parseInt(maxResults) || 5000
   });
 
   res.json(result);
