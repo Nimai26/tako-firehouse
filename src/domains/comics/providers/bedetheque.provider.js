@@ -753,14 +753,17 @@ export class BedethequeProvider extends BaseProvider {
       if (seen.has(id)) continue;
       seen.add(id);
 
-      // Extraire le tome depuis le slug
-      const tomeMatch = slug.match(/Tome-(\d+)/i);
+      // Extraire le tome ET le code d'édition (ex « Tome-392a1983 » → tome 392, édition « a1983 »).
+      // Certains tomes ont plusieurs éditions (rééditions, années différentes → cotes différentes) :
+      // on les distingue ici, sinon elles s'affichent toutes « N°392 — … » (indistinguables).
+      const tomeMatch = slug.match(/Tome-(\d+)([A-Za-z]\d*(?:\/\d+)?)?/i);
       const tome = tomeMatch ? tomeMatch[1] : null;
+      const edition = tomeMatch && tomeMatch[2] ? tomeMatch[2] : null;
 
-      // Extraire le titre album : partie après "Tome-N-" si présent
+      // Extraire le titre album : partie après "Tome-N[code]-" si présent
       let title;
       if (tomeMatch) {
-        const afterTome = slug.replace(/.*Tome-\d+-/i, '');
+        const afterTome = slug.replace(/.*Tome-\d+[A-Za-z]?\d*(?:\/\d+)?-/i, '');
         title = afterTome
           ? afterTome.replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
           : null;
@@ -788,6 +791,7 @@ export class BedethequeProvider extends BaseProvider {
         type: 'album',
         title,
         tome,
+        edition,
         url,
         coverUrl
       });
