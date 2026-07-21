@@ -147,6 +147,80 @@ function parseSpecialStickersToArray(raw) {
   return items;
 }
 
+// Types de cartes « spéciales » (finitions / éditions) à distinguer de la base (Histoire/Normales).
+const SPECIAL_CARD_KW = /(dor[ée]|argent|brillant|jedi|hologra|m[ée]tal|paillet|transparent|puzzle|relief|autocollant|tatouage|phosphor|lenticul|3d|fluo|[ée]dition|limit|foil|shiny|chrome|prism|arc.?en.?ciel|rainbow)/i;
+
+/**
+ * Développe une liste NUMÉRIQUE brute (« 161 à 168 », « 1-30, 45 ») en tableau d'entiers.
+ */
+function expandNumericList(raw) {
+  const out = [];
+  if (!raw) return out;
+  for (const part of String(raw).split(/[,;]/)) {
+    const t = part.trim();
+    const range = t.match(/(\d+)\s*(?:à|-)\s*(\d+)/i);
+    if (range) {
+      const a = parseInt(range[1]), b = parseInt(range[2]);
+      if (a <= b && b - a <= 5000) for (let i = a; i <= b; i++) out.push(i);
+    } else if (/^\d+$/.test(t)) {
+      out.push(parseInt(t));
+    }
+  }
+  return out;
+}
+
+/**
+ * Développe une liste de CARTES-LETTRES brute (« LESA, LEST », « A à Z ») en tableau de codes.
+ */
+function expandLetterList(raw) {
+  const out = [];
+  if (!raw) return out;
+  for (const part of String(raw).split(/[,;]/)) {
+    const t = part.trim();
+    const range = t.match(/^([A-Z])\s*(?:à|-)\s*([A-Z])$/i);
+    if (range) {
+      for (let i = range[1].toUpperCase().charCodeAt(0); i <= range[2].toUpperCase().charCodeAt(0); i++) {
+        out.push(String.fromCharCode(i));
+      }
+    } else {
+      const c = t.match(/^([A-Z][A-Z0-9]*)$/i);
+      if (c) out.push(c[1].toUpperCase());
+    }
+  }
+  return out;
+}
+
+/**
+ * Parse le format « Cartes <Type> [*marqueur] : <liste> » présent dans la DESCRIPTION de certains
+ * albums (ex Topps « Voyage vers Star Wars ») — que le regex checklist standard ne capte pas.
+ * → [{ type, marker, listRaw }].
+ */
+function parseCardSectionsFromText(text) {
+  const out = [];
+  if (!text) return out;
+  for (let line of String(text).split(/\r?\n/)) {
+    line = line.trim();
+    if (!/^cartes?\b/i.test(line)) continue;
+    line = line.replace(/^cartes?\s+/i, '');
+    const mk = line.match(/\*([A-Za-z]+)/);          // marqueur *dor / *bri / *briJ / *lim …
+    const marker = mk ? mk[1].toLowerCase() : null;
+    line = line.replace(/\*[A-Za-z]+/g, '').trim();
+    let type, listRaw;
+    const ci = line.indexOf(':');
+    if (ci >= 0) {                                    // « Type : liste »
+      type = line.slice(0, ci).trim();
+      listRaw = line.slice(ci + 1).trim();
+    } else {                                          // « Type 169 à 200 » (sans deux-points)
+      const rm = line.match(/(\d+\s*(?:à|-)\s*\d+.*|\d+.*)$/i);
+      if (!rm) continue;
+      type = line.slice(0, rm.index).trim();
+      listRaw = rm[0].trim();
+    }
+    if (type && listRaw) out.push({ type, marker, listRaw });
+  }
+  return out;
+}
+
 /**
  * Search Paninimania albums
  * @param {string} term - Search term
@@ -443,6 +517,27 @@ export async function getPaninimaniAlbumDetails(albumId, options = {}) {
         }
       }
       
+      // Format « Cartes <Type> [*marqueur] : <liste> » logé dans les blocs g0 (ex albums Topps
+      // « Voyage vers Star Wars ») : le regex checklist standard capte parfois la base (« 1 à 216 »)
+      // mais JAMAIS les finitions (*dor/*bri/*briJ/*lim) ni les cartes-lettres (LESA/LEST). On lit donc
+      // TOUJOURS les sections « Cartes … » de tous les g0 → base (si le standard n'a rien) + spéciales.
+      const g0Text = [...html.matchAll(/<div\s+class="g0">([\s\S]*?)<\/div>/gi)]
+        .map(m => decodeHtmlEntities(m[1].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ' ')))
+        .join('\n');
+      const cardSections = parseCardSectionsFromText(g0Text);
+      if ((!checklistParsed || checklistParsed.length === 0) && cardSections.length) {
+        const baseSet = new Set();
+        for (const sec of cardSections) {
+          for (const n of expandNumericList(sec.listRaw)) baseSet.add(n);
+        }
+        if (baseSet.size) {
+          checklistParsed = [...baseSet].sort((a, b) => a - b);
+          if (!checklistRaw) {
+            checklistRaw = cardSections.map(s => `${s.type} : ${s.listRaw}`).join(' ; ');
+          }
+        }
+      }
+
       // Build structured checklist
       const checklist = checklistRaw ? {
         raw: checklistRaw,
@@ -616,20 +711,43 @@ export async function getPaninimaniAlbumDetails(albumId, options = {}) {
         }
       }
       
+      // Spéciales issues du format « Cartes <Type> : <liste> » (fallback description) : finitions
+      // (*dor/*bri/*briJ/*lim…) et cartes-lettres (LESA/LEST). La base pure (Histoire/Normales) n'y
+      // va pas — elle reste dans la checklist de base.
+      for (const sec of cardSections) {
+        const nums = expandNumericList(sec.listRaw);
+        const letters = nums.length ? [] : expandLetterList(sec.listRaw);
+        const list = nums.length ? nums : letters;
+        if (!list.length) continue;
+        const isSpecial = !!sec.marker || SPECIAL_CARD_KW.test(sec.type) || letters.length > 0;
+        if (!isSpecial) continue;
+        // retirer les « (1 sur 6) » / « (1 sur 2) » parasites du type puis normaliser
+        const name = sec.type.replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim()
+          .replace(/^./, c => c.toUpperCase());
+        if (!name) continue;
+        if (specialStickers.some(s => s.name.toLowerCase() === name.toLowerCase())) continue;
+        specialStickers.push({
+          name, raw: sec.listRaw, total: list.length, list,
+          ...(sec.marker ? { marker: sec.marker } : {})
+        });
+      }
+
       if (!title) {
         throw new Error(`Unable to extract album information: ${albumUrl}`);
       }
-      
-      // Calculate real total (normal + special stickers)
+
+      // Calculate real total (normal + special stickers). Un spécial NUMÉRIQUE déjà dans la base
+      // (ex Dorées 161-168 ⊂ 1-216) ne s'ajoute PAS ; seuls les EXTRA (cartes-lettres, n° hors base)
+      // comptent — sinon double-comptage (bug format Topps).
       if (checklist) {
+        const baseSet = new Set(checklist.items || []);
         let totalSpecials = 0;
-        
-        if (specialStickers && specialStickers.length > 0) {
-          for (const special of specialStickers) {
-            totalSpecials += special.list.length;
+        for (const special of (specialStickers || [])) {
+          for (const it of (special.list || [])) {
+            if (typeof it === 'number') { if (!baseSet.has(it)) totalSpecials++; }
+            else totalSpecials++;
           }
         }
-        
         checklist.totalWithSpecials = checklist.total + totalSpecials;
       }
       
