@@ -9,6 +9,7 @@ import { Router } from 'express';
 import mangaUpdatesRoutes from './routes/mangaupdates.routes.js';
 import jikanRoutes from './routes/jikan.routes.js';
 import nautiljonRoutes from './routes/nautiljon.routes.js';
+import mangaNewsRoutes from './routes/manga-news.routes.js';
 import { createAmazonAliasRouter } from '../ecommerce/routes/amazon-alias.factory.js';
 
 const router = Router();
@@ -72,6 +73,21 @@ const domainInfo = {
       ],
       types: ['Manga'],
       note: 'Données en français (source Nautiljon.com), scraping HTML'
+    },
+    {
+      name: 'manga-news',
+      path: '/manga-news',
+      description: 'Manga-news.com - Séries manga VF ET magazines FR (Animeland, Coyote…) par numéro',
+      requiresKey: false,
+      rateLimit: 'Via FlareSolverr (Cloudflare)',
+      features: [
+        'Recherche séries manga VF + magazines',
+        'Liste complète des volumes/numéros avec couvertures FR',
+        'Synopsis français, éditeur, auteur, genres, année VO',
+        'Idéal pour full-sets numérotés (mangas + presse manga)'
+      ],
+      types: ['Manga', 'Magazine'],
+      note: 'Scraping via FlareSolverr (VPN dédié)'
     }
   ]
 };
@@ -136,10 +152,17 @@ router.get('/', (req, res) => {
     { method: 'GET', path: '/series/:slug/volume/:volumeId', description: 'Détails d\'un volume' }
   ];
 
+  const mangaNewsRoutesInfo = [
+    { method: 'GET', path: '/health', description: 'Health check' },
+    { method: 'GET', path: '/search', description: 'Recherche de séries (mangas VF + magazines)' },
+    { method: 'GET', path: '/serie/:slug', description: 'Détail série + liste des volumes/numéros' }
+  ];
+
   const routesByProvider = {
     mangaupdates: mangaUpdatesRoutes,
     jikan: jikanRoutesInfo,
-    nautiljon: nautiljonRoutesInfo
+    nautiljon: nautiljonRoutesInfo,
+    'manga-news': mangaNewsRoutesInfo
   };
 
   res.json({
@@ -170,6 +193,7 @@ router.get('/', (req, res) => {
 router.use('/mangaupdates', mangaUpdatesRoutes);
 router.use('/jikan', jikanRoutes);
 router.use('/nautiljon', nautiljonRoutes);
+router.use('/manga-news', mangaNewsRoutes);
 router.use('/amazon', createAmazonAliasRouter({ domain: 'anime-manga', category: 'books', categoryLabel: 'Livres' }));
 
 export default router;
