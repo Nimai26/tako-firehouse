@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: tako_api
+    container_name: tako_firehouse
     restart: unless-stopped
     ports:
       - "3000:3000"
