@@ -424,16 +424,31 @@ export class KlickypediaProvider extends BaseProvider {
       }
     }
 
-    // Extraire l'image principale depuis og:image
-    const ogImageMatch = html.match(/og:image"\s+content="([^"]+)"/);
-    if (ogImageMatch) {
-      details.images.push(ogImageMatch[1]);
+    // Extraire la GALERIE produit complète depuis les liens lightbox[set] : boîte (face avant),
+    // DOS / CONTENU (l'image qui montre toutes les pièces du set), et l'image de résumé. Sans ça
+    // seule la boîte (og:image) était récupérée → images des pièces manquantes (retour Seb 29/07).
+    const galleryPattern = /<a[^>]+rel="lightbox\[set\]"[^>]+href="([^"]+)"/gi;
+    let galMatch;
+    while ((galMatch = galleryPattern.exec(html)) !== null) {
+      const u = galMatch[1].replace(/\\\//g, '/').trim();   // certains href sont échappés (\/)
+      if (u && /^https?:\/\//i.test(u) && !details.images.includes(u)) {
+        details.images.push(u);
+      }
     }
 
-    // Extraire l'image depuis JSON-LD
-    const jsonLdMatch = html.match(/"contentUrl":"([^"]+)"/);
-    if (jsonLdMatch && !details.images.includes(jsonLdMatch[1])) {
-      details.images.push(jsonLdMatch[1]);
+    // FALLBACK si aucune galerie lightbox trouvée : og:image + JSON-LD (comportement historique).
+    if (details.images.length === 0) {
+      const ogImageMatch = html.match(/og:image"\s+content="([^"]+)"/);
+      if (ogImageMatch) {
+        details.images.push(ogImageMatch[1]);
+      }
+      const jsonLdMatch = html.match(/"contentUrl":"([^"]+)"/);
+      if (jsonLdMatch) {
+        const u = jsonLdMatch[1].replace(/\\\//g, '/');   // JSON-LD échappe les slashes (\/)
+        if (!details.images.includes(u)) {
+          details.images.push(u);
+        }
+      }
     }
 
     return details;
