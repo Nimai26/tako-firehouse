@@ -74,27 +74,33 @@ export class KreoProvider extends BaseProvider {
 
     this.log.debug(`Recherche KRE-O: "${query}" (page: ${page}, franchise: ${franchise || 'toutes'})`);
 
-    let countSql = `SELECT COUNT(*) as total FROM kreo_products WHERE (name ILIKE $1 OR set_number ILIKE $1 OR franchise ILIKE $1 OR kreons_included ILIKE $1)`;
-    let searchSql = `SELECT * FROM kreo_products WHERE (name ILIKE $1 OR set_number ILIKE $1 OR franchise ILIKE $1 OR kreons_included ILIKE $1)`;
-    const params = [`%${query}%`];
-    const countParams = [`%${query}%`];
+    // TOKENISATION : chaque MOT du terme doit matcher au moins un champ (name / set_number / franchise
+    // / kreons_included). Sans ça, une requête multi-mots comme « Transformers Mirage » (franchise dans
+    // un champ, nom dans un autre) était enveloppée dans UN seul %…% et ne matchait rien (retour Seb :
+    // KRE-O couvre Transformers, Star Trek, G.I. Joe… → le mot de franchise ne doit pas être jeté mais
+    // apparié au champ franchise). Comportement mono-mot inchangé.
+    const tokens = String(query || '').trim().split(/\s+/).filter(t => t.length >= 2);
+    const terms = tokens.length ? tokens : [String(query || '').trim()];
+    const params = [];
+    const clauses = terms.map((t) => {
+      params.push(`%${t}%`);
+      const i = params.length;
+      return `(name ILIKE $${i} OR set_number ILIKE $${i} OR franchise ILIKE $${i} OR kreons_included ILIKE $${i})`;
+    });
+    let where = clauses.join(' AND ');
 
-    if (franchise) {
-      countSql += ` AND franchise = $${countParams.length + 1}`;
-      searchSql += ` AND franchise = $${params.length + 1}`;
-      params.push(franchise);
-      countParams.push(franchise);
-    }
+    if (franchise) { params.push(franchise); where += ` AND franchise = $${params.length}`; }
+    if (subLine) { params.push(subLine); where += ` AND sub_line = $${params.length}`; }
 
-    if (subLine) {
-      countSql += ` AND sub_line = $${countParams.length + 1}`;
-      searchSql += ` AND sub_line = $${params.length + 1}`;
-      params.push(subLine);
-      countParams.push(subLine);
-    }
+    const countParams = params.slice();
+    const countSql = `SELECT COUNT(*) as total FROM kreo_products WHERE ${where}`;
 
-    searchSql += ` ORDER BY franchise, year DESC, name LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    // PERTINENCE : les sets dont le NOM contient les mots priment (« Mirage » avant « Ultimate Kreon
+    // Collection » qui ne matche que par un Kreon inclus). Score = nb de mots présents dans le nom.
+    const nameRank = terms.map((_, k) => `(CASE WHEN name ILIKE $${k + 1} THEN 1 ELSE 0 END)`).join(' + ');
     params.push(limit, offset);
+    const searchSql = `SELECT * FROM kreo_products WHERE ${where} ` +
+      `ORDER BY (${nameRank}) DESC, franchise, year DESC, name LIMIT $${params.length - 1} OFFSET $${params.length}`;
 
     const [countResult, results] = await Promise.all([
       megaQueryOne(countSql, countParams),
