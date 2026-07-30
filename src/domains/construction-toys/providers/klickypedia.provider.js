@@ -424,6 +424,31 @@ export class KlickypediaProvider extends BaseProvider {
       }
     }
 
+    // Extraire les PIÈCES du set (« PARTS IN THIS SET ») : ancres /parts/<num>-<slug>/ avec
+    // title="<num> - <nom>" + vignette part-<num>-*.jpg. Une pièce en N exemplaires apparaît
+    // N fois dans la section → quantity par comptage. On ne lit QUE ce bloc (les sets liés
+    // au-dessus utilisent le même markup yarpp mais pointent vers /sets/).
+    details.parts = [];
+    // l'entête suit la langue de la page : PARTS IN THIS SET / PIÈCES DANS CE SET / TEILE… / PIEZAS…
+    const afterParts = html.split(/<h4 class="block-title"><span>[^<]*(?:PARTS|PI[EÈ]CES|TEILE|PIEZAS)[^<]*<\/span><\/h4>/i)[1];
+    if (afterParts) {
+      const segment = afterParts.split(/<h4 class="block-title">/i)[0];
+      const anchorPattern = /<a[^>]+href="https?:\/\/www\.klickypedia\.com\/parts\/[^"]+"[^>]+title="([^"]+)"([\s\S]*?)<\/a>/gi;
+      const byPart = new Map();
+      let pm;
+      while ((pm = anchorPattern.exec(segment)) !== null) {
+        const title = this.decodeHtmlEntities(pm[1].trim());
+        const tm = title.match(/^(\d+)\s*-\s*(.+)$/);
+        const partNum = tm ? tm[1] : null;
+        const name = tm ? tm[2].trim() : title;
+        const imageUrl = (pm[2].match(/src="([^"]+)"/) || [])[1] || null;
+        const key = partNum || name;
+        if (byPart.has(key)) byPart.get(key).quantity += 1;
+        else byPart.set(key, { partNum, name, imageUrl, quantity: 1 });
+      }
+      details.parts = [...byPart.values()];
+    }
+
     // Extraire la GALERIE produit complète depuis les liens lightbox[set] : boîte (face avant),
     // DOS / CONTENU (l'image qui montre toutes les pièces du set), et l'image de résumé. Sans ça
     // seule la boîte (og:image) était récupérée → images des pièces manquantes (retour Seb 29/07).

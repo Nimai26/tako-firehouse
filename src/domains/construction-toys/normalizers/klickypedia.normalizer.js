@@ -255,6 +255,7 @@ export class KlickypediaNormalizer extends BaseNormalizer {
 
       // Contenu détaillé (spécifique Playmobil)
       figureCount: raw.figureCount || null, // Nombre de personnages (gardé pour compatibilité)
+      parts: raw.parts || [], // Inventaire de pièces (« PARTS IN THIS SET », quantity par comptage)
 
       // Métadonnées encyclopédiques
       metadata: {
