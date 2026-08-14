@@ -26,6 +26,7 @@
 import { logger } from '../../../shared/utils/logger.js';
 import {
   isMegaConnected as isDbConnected,
+  megaQuery as query,
   megaQueryOne as queryOne,
   megaQueryAll as queryAll
 } from '../../../infrastructure/mega/index.js';
@@ -858,21 +859,100 @@ export async function getCollectionCards(collectionId) {
     [col.id]
   );
 
+  // FUSION des CONTRIBUTIONS communautaires (table séparée, ne pollue pas le scrape) : une contrib
+  // AJOUTE un numéro absent OU complète l'image d'un numéro qui n'en avait pas.
+  await ensureContribTable();
+  const contribs = await queryAll(
+    `SELECT card_number, rarity, image_path_hd, image_path_thumb FROM carddass_contributions
+     WHERE collection_id = $1`, [col.id]);
+  const parNum = new Map(rows.map((r) => [String(r.card_number), r]));
+  for (const cc of contribs) {
+    const k = String(cc.card_number);
+    const ex = parNum.get(k);
+    if (ex) {
+      if (!ex.image_path_hd) {
+        ex.image_path_hd = cc.image_path_hd; ex.image_path_thumb = cc.image_path_thumb || cc.image_path_hd;
+        ex._contrib = true;
+      }
+    } else {
+      parNum.set(k, {
+        id: `contrib-${col.id}-${k}`, source_id: null, card_number: k,
+        rarity: cc.rarity || null, rarity_color: null,
+        image_path_hd: cc.image_path_hd, image_path_thumb: cc.image_path_thumb || cc.image_path_hd,
+        series_name: 'Contributions', _contrib: true
+      });
+    }
+  }
+  const merged = [...parNum.values()].sort((a, b) => {
+    const na = /^[0-9]{1,6}$/.test(String(a.card_number)) ? parseInt(a.card_number, 10) : 1e9;
+    const nb = /^[0-9]{1,6}$/.test(String(b.card_number)) ? parseInt(b.card_number, 10) : 1e9;
+    return na - nb || String(a.card_number).localeCompare(String(b.card_number));
+  });
+
   return {
     license: { id: col.license_id, sourceId: col.license_source_id, name: col.license_name },
     collection: { id: col.id, sourceId: col.source_id, name: col.name },
-    total: rows.length,
-    cards: rows.map((r) => ({
+    total: merged.length,
+    cards: merged.map((r) => ({
       id: r.id,
       cardNumber: r.card_number,
       rarity: r.rarity || null,
       rarityColor: r.rarity_color || null,
       series: r.series_name || null,
+      contributed: !!r._contrib,
       images: resolveImagePair(r.image_path_thumb, r.image_path_hd),
       imagePathHd: r.image_path_hd || null,
       imagePathThumb: r.image_path_thumb || null
     }))
   };
+}
+
+// ── Contributions communautaires (images ajoutées par les admins) ────────────
+async function ensureContribTable() {
+  await query(`CREATE TABLE IF NOT EXISTS carddass_contributions (
+    id SERIAL PRIMARY KEY,
+    collection_id INTEGER NOT NULL,
+    card_number VARCHAR(100) NOT NULL,
+    rarity VARCHAR(100),
+    image_path_hd TEXT,
+    image_path_thumb TEXT,
+    contributor VARCHAR(100),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE (collection_id, card_number)
+  )`);
+}
+
+/**
+ * Enregistre/actualise une image CONTRIBUÉE pour une carte (par un admin Firehouse). Stockée à part
+ * (carddass_contributions) → fusionnée à l'énumération, sans toucher le scrape. L'image est déjà
+ * écrite sur le stockage par l'appelant (Firehouse a accès au NAS) ; ici on n'écrit que la ligne DB.
+ */
+export async function contributeCard(collectionId, opts = {}) {
+  ensureConnected();
+  const { cardNumber, imagePathHd, imagePathThumb, rarity, contributor } = opts;
+  if (!cardNumber || !imagePathHd) {
+    throw new Error('cardNumber et imagePathHd requis');
+  }
+  const col = await queryOne(
+    `SELECT id FROM carddass_collections WHERE id = $1 OR source_id = $1 ORDER BY (id = $1) DESC LIMIT 1`,
+    [collectionId]);
+  if (!col) {
+    throw new Error(`Collection non trouvée: ${collectionId}`);
+  }
+  await ensureContribTable();
+  const r = await queryOne(
+    `INSERT INTO carddass_contributions
+       (collection_id, card_number, rarity, image_path_hd, image_path_thumb, contributor)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (collection_id, card_number) DO UPDATE
+       SET image_path_hd = EXCLUDED.image_path_hd,
+           image_path_thumb = EXCLUDED.image_path_thumb,
+           rarity = COALESCE(EXCLUDED.rarity, carddass_contributions.rarity),
+           contributor = EXCLUDED.contributor, updated_at = NOW()
+     RETURNING id`,
+    [col.id, String(cardNumber), rarity || null, imagePathHd, imagePathThumb || imagePathHd, contributor || null]);
+  return { id: r.id, collectionId: col.id, cardNumber: String(cardNumber) };
 }
 
 // ============================================================================

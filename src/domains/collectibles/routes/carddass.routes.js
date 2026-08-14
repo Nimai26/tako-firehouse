@@ -27,6 +27,7 @@ import {
   getLicenseById,
   getCollections,
   getCollectionCards,
+  contributeCard,
   getSeries,
   getCards,
   getCardById,
@@ -274,6 +275,27 @@ router.get('/collections/:id/cards', asyncHandler(async (req, res) => {
       });
     }
     throw error;
+  }
+}));
+
+/**
+ * POST /api/collectibles/carddass/collections/:id/contribute
+ * Enregistre une image CONTRIBUÉE pour une carte (partage communautaire). L'image est déjà écrite
+ * sur le stockage par l'appelant (Firehouse) ; body = { cardNumber, imagePathHd, imagePathThumb?,
+ * rarity?, contributor? }. Stockée à part → fusionnée à l'énumération.
+ */
+router.post('/collections/:id/contribute', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { cardNumber, imagePathHd, imagePathThumb, rarity, contributor } = req.body || {};
+  logger.info(`[Carddass] Contribution image collection ${id} carte #${cardNumber}`);
+  try {
+    const data = await contributeCard(id, { cardNumber, imagePathHd, imagePathThumb, rarity, contributor });
+    res.json({ success: true, provider: 'carddass', domain: 'collectibles', data });
+  } catch (error) {
+    const code = error.message.includes('non trouvée') ? 404
+      : error.message.includes('requis') ? 400 : 500;
+    if (code >= 500) throw error;
+    return res.status(code).json({ success: false, error: { code: 'ERROR', message: error.message } });
   }
 }));
 
