@@ -177,7 +177,7 @@ export async function getLicenseById(licenseId) {
         JOIN carddass_collections c ON s.collection_id = c.id 
         WHERE c.license_id = l.id) as card_count
      FROM carddass_licenses l 
-     WHERE l.id = $1 OR l.source_id = $1`,
+     WHERE l.id = $1 OR l.source_id = $1 ORDER BY (l.id = $1) DESC LIMIT 1`,
     [licenseId]
   );
 
@@ -216,9 +216,10 @@ export async function getCollections(licenseId, options = {}) {
   const limit = Math.min(pageSize, 100);
   const offset = (page - 1) * limit;
 
-  // Résoudre l'ID interne de la licence
+  // Résoudre l'ID interne de la licence — PRIORITÉ à l'id interne (id et source_id peuvent
+  // COLLISIONNER entre deux licences, ex id=55 « Pretty Guardian Sailor Moon » vs source_id=55 autre).
   const license = await queryOne(
-    'SELECT id, source_id, name FROM carddass_licenses WHERE id = $1 OR source_id = $1',
+    'SELECT id, source_id, name FROM carddass_licenses WHERE id = $1 OR source_id = $1 ORDER BY (id = $1) DESC LIMIT 1',
     [licenseId]
   );
 
@@ -297,7 +298,7 @@ export async function getSeries(collectionId, options = {}) {
             l.source_id as license_source_id, l.name as license_name
      FROM carddass_collections c
      JOIN carddass_licenses l ON l.id = c.license_id
-     WHERE c.id = $1 OR c.source_id = $1`,
+     WHERE c.id = $1 OR c.source_id = $1 ORDER BY (c.id = $1) DESC LIMIT 1`,
     [collectionId]
   );
 
@@ -383,7 +384,7 @@ export async function getCards(seriesId, options = {}) {
      FROM carddass_series s
      JOIN carddass_collections c ON c.id = s.collection_id
      JOIN carddass_licenses l ON l.id = c.license_id
-     WHERE s.id = $1 OR s.source_id = $1`,
+     WHERE s.id = $1 OR s.source_id = $1 ORDER BY (s.id = $1) DESC LIMIT 1`,
     [seriesId]
   );
 
@@ -528,7 +529,7 @@ export async function getCardImages(cardId) {
   ensureConnected();
 
   const card = await queryOne(
-    'SELECT id, source_id, card_number FROM carddass_cards WHERE id = $1 OR source_id = $1',
+    'SELECT id, source_id, card_number FROM carddass_cards WHERE id = $1 OR source_id = $1 ORDER BY (id = $1) DESC LIMIT 1',
     [cardId]
   );
 
