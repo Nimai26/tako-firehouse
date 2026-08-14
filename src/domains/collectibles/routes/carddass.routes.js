@@ -286,10 +286,10 @@ router.get('/collections/:id/cards', asyncHandler(async (req, res) => {
  */
 router.post('/collections/:id/contribute', asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { cardNumber, imagePathHd, imagePathThumb, rarity, contributor } = req.body || {};
+  const { cardNumber, imagePathHd, imagePathThumb, rarity, contributor, extras } = req.body || {};
   logger.info(`[Carddass] Contribution image collection ${id} carte #${cardNumber}`);
   try {
-    const data = await contributeCard(id, { cardNumber, imagePathHd, imagePathThumb, rarity, contributor });
+    const data = await contributeCard(id, { cardNumber, imagePathHd, imagePathThumb, rarity, contributor, extras });
     res.json({ success: true, provider: 'carddass', domain: 'collectibles', data });
   } catch (error) {
     const code = error.message.includes('non trouvée') ? 404

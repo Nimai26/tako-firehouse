@@ -878,23 +878,26 @@ export async function getCollectionCards(collectionId) {
   // AJOUTE un numéro absent OU complète l'image d'un numéro qui n'en avait pas.
   await ensureContribTable();
   const contribs = await queryAll(
-    `SELECT card_number, rarity, image_path_hd, image_path_thumb FROM carddass_contributions
+    `SELECT card_number, rarity, image_path_hd, image_path_thumb, extras FROM carddass_contributions
      WHERE collection_id = $1`, [col.id]);
   const parNum = new Map(rows.map((r) => [String(r.card_number), r]));
   for (const cc of contribs) {
     const k = String(cc.card_number);
+    let ccExtras = [];
+    try { ccExtras = cc.extras ? JSON.parse(cc.extras) : []; } catch (e) { ccExtras = []; }
     const ex = parNum.get(k);
     if (ex) {
       if (!ex.image_path_hd) {
         ex.image_path_hd = cc.image_path_hd; ex.image_path_thumb = cc.image_path_thumb || cc.image_path_hd;
         ex._contrib = true;
       }
+      if (ccExtras.length) ex._contribExtras = ccExtras;   // dos/variantes contribués
     } else {
       parNum.set(k, {
         id: `contrib-${col.id}-${k}`, source_id: null, card_number: k,
         rarity: cc.rarity || null, rarity_color: null,
         image_path_hd: cc.image_path_hd, image_path_thumb: cc.image_path_thumb || cc.image_path_hd,
-        series_name: 'Contributions', _contrib: true
+        series_name: 'Contributions', _contrib: true, _contribExtras: ccExtras
       });
     }
   }
@@ -936,7 +939,7 @@ export async function getCollectionCards(collectionId) {
       rarityColor: r.rarity_color || null,
       series: r.series_name || null,
       contributed: !!r._contrib,
-      extras: extrasByCard.get(r.id) || [],
+      extras: [...(extrasByCard.get(r.id) || []), ...(r._contribExtras || [])],
       images: resolveImagePair(r.image_path_thumb, r.image_path_hd),
       imagePathHd: r.image_path_hd || null,
       imagePathThumb: r.image_path_thumb || null
@@ -958,6 +961,8 @@ async function ensureContribTable() {
     updated_at TIMESTAMP DEFAULT NOW(),
     UNIQUE (collection_id, card_number)
   )`);
+  // extras (dos / variantes contribués) : JSON array de chemins — ajout rétro-compatible.
+  await query(`ALTER TABLE carddass_contributions ADD COLUMN IF NOT EXISTS extras TEXT`);
 }
 
 /**
@@ -967,7 +972,7 @@ async function ensureContribTable() {
  */
 export async function contributeCard(collectionId, opts = {}) {
   ensureConnected();
-  const { cardNumber, imagePathHd, imagePathThumb, rarity, contributor } = opts;
+  const { cardNumber, imagePathHd, imagePathThumb, rarity, contributor, extras } = opts;
   if (!cardNumber || !imagePathHd) {
     throw new Error('cardNumber et imagePathHd requis');
   }
@@ -978,17 +983,20 @@ export async function contributeCard(collectionId, opts = {}) {
     throw new Error(`Collection non trouvée: ${collectionId}`);
   }
   await ensureContribTable();
+  const extrasJson = Array.isArray(extras) && extras.length ? JSON.stringify(extras) : null;
   const r = await queryOne(
     `INSERT INTO carddass_contributions
-       (collection_id, card_number, rarity, image_path_hd, image_path_thumb, contributor)
-     VALUES ($1,$2,$3,$4,$5,$6)
+       (collection_id, card_number, rarity, image_path_hd, image_path_thumb, contributor, extras)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
      ON CONFLICT (collection_id, card_number) DO UPDATE
        SET image_path_hd = EXCLUDED.image_path_hd,
            image_path_thumb = EXCLUDED.image_path_thumb,
            rarity = COALESCE(EXCLUDED.rarity, carddass_contributions.rarity),
+           extras = COALESCE(EXCLUDED.extras, carddass_contributions.extras),
            contributor = EXCLUDED.contributor, updated_at = NOW()
      RETURNING id`,
-    [col.id, String(cardNumber), rarity || null, imagePathHd, imagePathThumb || imagePathHd, contributor || null]);
+    [col.id, String(cardNumber), rarity || null, imagePathHd, imagePathThumb || imagePathHd,
+     contributor || null, extrasJson]);
   return { id: r.id, collectionId: col.id, cardNumber: String(cardNumber) };
 }
 
