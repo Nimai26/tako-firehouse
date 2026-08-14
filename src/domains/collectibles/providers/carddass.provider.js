@@ -820,6 +820,61 @@ export async function healthCheck() {
   }
 }
 
+/**
+ * Toutes les cartes d'une COLLECTION (toutes séries confondues), triées par numéro.
+ * Sert à ÉNUMÉRER un full-set complet (le /search plafonne à 100 et confond les source_id
+ * entre sites — ici on part de l'id interne, unique). Renvoie aussi le chemin LOCAL des images
+ * (image_path_*) pour un consommateur qui a accès au stockage (ex : Firehouse via le NAS).
+ * @param {string|number} collectionId - id interne ou source_id de la collection
+ */
+export async function getCollectionCards(collectionId) {
+  ensureConnected();
+
+  // ⚠️ id INTERNE et source_id peuvent COLLISIONNER entre deux collections (ex : id=168 Banpresto/Ranma
+  // ET source_id=168 SD Gundam). On PRIORISE donc le match sur l'id interne (unique), source_id en repli.
+  const col = await queryOne(
+    `SELECT c.id, c.source_id, c.name, c.license_id,
+            l.name AS license_name, l.source_id AS license_source_id
+     FROM carddass_collections c
+     JOIN carddass_licenses l ON l.id = c.license_id
+     WHERE c.id = $1 OR c.source_id = $1
+     ORDER BY (c.id = $1) DESC
+     LIMIT 1`,
+    [collectionId]
+  );
+  if (!col) {
+    throw new Error(`Collection non trouvée: ${collectionId}`);
+  }
+
+  const rows = await queryAll(
+    `SELECT ca.id, ca.source_id, ca.card_number, ca.rarity, ca.rarity_color,
+            ca.image_path_thumb, ca.image_path_hd, ca.image_url_thumb, ca.image_url_hd,
+            s.name AS series_name, s.source_id AS series_source_id
+     FROM carddass_cards ca
+     JOIN carddass_series s ON s.id = ca.series_id
+     WHERE s.collection_id = $1
+     ORDER BY CASE WHEN ca.card_number ~ '^[0-9]{1,6}$' THEN ca.card_number::int ELSE 999999 END,
+              ca.card_number`,
+    [col.id]
+  );
+
+  return {
+    license: { id: col.license_id, sourceId: col.license_source_id, name: col.license_name },
+    collection: { id: col.id, sourceId: col.source_id, name: col.name },
+    total: rows.length,
+    cards: rows.map((r) => ({
+      id: r.id,
+      cardNumber: r.card_number,
+      rarity: r.rarity || null,
+      rarityColor: r.rarity_color || null,
+      series: r.series_name || null,
+      images: resolveImagePair(r.image_path_thumb, r.image_path_hd),
+      imagePathHd: r.image_path_hd || null,
+      imagePathThumb: r.image_path_thumb || null
+    }))
+  };
+}
+
 // ============================================================================
 // HELPERS INTERNES
 // ============================================================================

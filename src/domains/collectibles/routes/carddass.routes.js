@@ -26,6 +26,7 @@ import {
   getLicenses,
   getLicenseById,
   getCollections,
+  getCollectionCards,
   getSeries,
   getCards,
   getCardById,
@@ -240,6 +241,36 @@ router.get('/licenses/:id/collections', asyncHandler(async (req, res) => {
           code: 'NOT_FOUND',
           message: error.message
         }
+      });
+    }
+    throw error;
+  }
+}));
+
+/**
+ * GET /api/collectibles/carddass/collections/:id/cards
+ * TOUTES les cartes d'une collection (toutes séries), triées par numéro — énumération full-set.
+ * (Contourne le plafond 100 du /search et sa confusion de source_id entre sites.)
+ */
+router.get('/collections/:id/cards', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  logger.info(`[Carddass] Énumération complète de la collection ${id}`);
+
+  try {
+    const data = await getCollectionCards(id);
+    res.json({
+      success: true,
+      provider: 'carddass',
+      domain: 'collectibles',
+      data,
+      meta: { total: data.total, fetchedAt: new Date().toISOString() }
+    });
+  } catch (error) {
+    if (error.message.includes('non trouvée')) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: error.message }
       });
     }
     throw error;
