@@ -889,10 +889,31 @@ export async function getCollectionCards(collectionId) {
     return na - nb || String(a.card_number).localeCompare(String(b.card_number));
   });
 
+  // MÉDIAS de la collection (au-delà des cartes) : packagings/flyers + capsules (par série) + dos/
+  // variantes (extra images par carte). Chemins LOCAUX (NAS) pour un consommateur qui y a accès.
+  const packs = await queryAll(
+    `SELECT p.image_path, s.name AS series FROM carddass_packagings p
+     JOIN carddass_series s ON s.id = p.series_id
+     WHERE s.collection_id = $1 AND p.image_path IS NOT NULL`, [col.id]);
+  const caps = await queryAll(
+    `SELECT capsule_path, name AS series FROM carddass_series
+     WHERE collection_id = $1 AND capsule_path IS NOT NULL`, [col.id]);
+  const extras = await queryAll(
+    `SELECT ei.image_path_hd, ca.card_number FROM carddass_extra_images ei
+     JOIN carddass_cards ca ON ca.id = ei.card_id
+     JOIN carddass_series s ON s.id = ca.series_id
+     WHERE s.collection_id = $1 AND ei.image_path_hd IS NOT NULL`, [col.id]);
+  const media = [
+    ...packs.map((p) => ({ type: 'packaging', path: p.image_path, label: `Packaging ${p.series}` })),
+    ...caps.map((c) => ({ type: 'capsule', path: c.capsule_path, label: `Capsule ${c.series}` })),
+    ...extras.map((e) => ({ type: 'extra', path: e.image_path_hd, label: `Dos carte #${e.card_number}` }))
+  ];
+
   return {
     license: { id: col.license_id, sourceId: col.license_source_id, name: col.license_name },
     collection: { id: col.id, sourceId: col.source_id, name: col.name },
     total: merged.length,
+    media,
     cards: merged.map((r) => ({
       id: r.id,
       cardNumber: r.card_number,
