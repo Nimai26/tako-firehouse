@@ -859,6 +859,20 @@ export async function getCollectionCards(collectionId) {
     [col.id]
   );
 
+  // EXTRAS par carte (dos / variantes) → attachés à chaque carte pour le zoom galerie.
+  const extraRows = await queryAll(
+    `SELECT ei.card_id, COALESCE(ei.image_path_hd, ei.image_path_thumb) AS path
+     FROM carddass_extra_images ei
+     JOIN carddass_cards ca ON ca.id = ei.card_id
+     JOIN carddass_series s ON s.id = ca.series_id
+     WHERE s.collection_id = $1 AND COALESCE(ei.image_path_hd, ei.image_path_thumb) IS NOT NULL`,
+    [col.id]);
+  const extrasByCard = new Map();
+  for (const er of extraRows) {
+    if (!extrasByCard.has(er.card_id)) extrasByCard.set(er.card_id, []);
+    extrasByCard.get(er.card_id).push(er.path);
+  }
+
   // FUSION des CONTRIBUTIONS communautaires (table séparée, ne pollue pas le scrape) : une contrib
   // AJOUTE un numéro absent OU complète l'image d'un numéro qui n'en avait pas.
   await ensureContribTable();
@@ -921,6 +935,7 @@ export async function getCollectionCards(collectionId) {
       rarityColor: r.rarity_color || null,
       series: r.series_name || null,
       contributed: !!r._contrib,
+      extras: extrasByCard.get(r.id) || [],
       images: resolveImagePair(r.image_path_thumb, r.image_path_hd),
       imagePathHd: r.image_path_hd || null,
       imagePathThumb: r.image_path_thumb || null
