@@ -880,9 +880,23 @@ export async function getCollectionCards(collectionId) {
   const contribs = await queryAll(
     `SELECT card_number, rarity, image_path_hd, image_path_thumb, extras FROM carddass_contributions
      WHERE collection_id = $1`, [col.id]);
-  const parNum = new Map(rows.map((r) => [String(r.card_number), r]));
+  // ⚠️ CLÉ = (SÉRIE, NUMÉRO) et non le numéro seul : la numérotation carddass REPART À ZÉRO à chaque
+  // « Part » (« n° 1 » existe en Part 1 ET en Part special). Avec une clé sur le seul numéro, les
+  // cartes s'écrasaient : Visual Adventure 343→295, la collection Carddass 1964→853 (repéré par Seb 15/08).
+  // …et la RARETÉ fait partie de l'identité : « n° 40 » existe en Prism ET en Laser (Part special)
+  const cleCarte = (r) => `${r.series_name || ''}|${String(r.card_number)}|${r.rarity || ''}`;
+  // ZÉRO PERTE : si deux cartes partagent (série, numéro, rareté) — cela arrive dans « Cartes hors
+  // serie » avec des images pourtant différentes — on suffixe la clé au lieu d'en écraser une.
+  const parNum = new Map();
+  for (const r of rows) {
+    let k = cleCarte(r);
+    if (parNum.has(k)) { let i = 2; while (parNum.has(`${k}#${i}`)) i += 1; k = `${k}#${i}`; }
+    parNum.set(k, r);
+  }
   for (const cc of contribs) {
-    const k = String(cc.card_number);
+    // une contribution ne porte pas de série : on complète la 1re carte qui a ce numéro, sinon on ajoute
+    const k = [...parNum.keys()].find((x) => x.split('|')[1] === String(cc.card_number))
+              || `Contributions|${String(cc.card_number)}|`;
     let ccExtras = [];
     try { ccExtras = cc.extras ? JSON.parse(cc.extras) : []; } catch (e) { ccExtras = []; }
     const ex = parNum.get(k);
