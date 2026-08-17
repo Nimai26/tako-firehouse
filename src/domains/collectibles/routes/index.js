@@ -12,6 +12,7 @@ import luluberluRoutes from './luluberlu.routes.js';
 import transformerlandRoutes from './transformerland.routes.js';
 import carddassRoutes from './carddass.routes.js';
 import myfigurecollectionRoutes from './myfigurecollection.routes.js';
+import fullsetsRoutes from './fullsets.routes.js';
 import { createAmazonAliasRouter } from '../../ecommerce/routes/amazon-alias.factory.js';
 import { logger } from '../../../shared/utils/logger.js';
 
@@ -23,6 +24,8 @@ router.use('/luluberlu', luluberluRoutes);
 router.use('/transformerland', transformerlandRoutes);
 router.use('/carddass', carddassRoutes);
 router.use('/myfigurecollection', myfigurecollectionRoutes);
+// archive partagee des listes de reference (full-sets) versee par Firehouse
+router.use('/fullsets', fullsetsRoutes);
 router.use('/amazon', createAmazonAliasRouter({
   domain: 'collectibles',
   category: 'toys',
