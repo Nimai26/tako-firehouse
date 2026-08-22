@@ -104,6 +104,28 @@ export class BedethequeProvider extends BaseProvider {
         signal: AbortSignal.timeout(this.timeout)
       });
 
+      // 403/503 = protection anti-bot, pas une panne : c'est précisément ce que FlareSolverr
+      // sait franchir, et il tourne déjà à côté (tako_flaresolverr). Sans ce repli, l'AJAX
+      // levait et TOUTE énumération de série BD tombait — constaté le 22/08 sur le full-set
+      // Tintin, avec 205 erreurs 403 en 24 h et aucune tentative de contournement.
+      if (response.status === 403 || response.status === 503) {
+        this.log.warn(`AJAX ${response.status} — repli FlareSolverr sur ${url.toString()}`);
+        const html = await this.flaresolverrRequest(url.toString());
+        try {
+          return JSON.parse(html);
+        } catch {
+          // FlareSolverr rend la page complète : l'API AJAX de bedetheque répond du JSON
+          // encapsulé dans du HTML quand elle passe par un navigateur.
+          const m = html && html.match(/<pre[^>]*>([\s\S]*?)<\/pre>|(\{[\s\S]*\}|\[[\s\S]*\])/);
+          if (m) {
+            try {
+              return JSON.parse(m[1] || m[2]);
+            } catch { /* on retombe sur le texte brut ci-dessous */ }
+          }
+          return html;
+        }
+      }
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
