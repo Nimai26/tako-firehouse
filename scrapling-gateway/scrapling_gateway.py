@@ -50,6 +50,7 @@ _LEURRES = ("just a moment", "checking your browser", "cf-browser-verification",
 app = FastAPI(title="Passerelle Scrapling (protocole FlareSolverr)")
 _sessions: dict[str, float] = {}          # sessions simulées : Scrapling n'en a pas besoin
 _stats = {"rapide": 0, "furtif": 0, "flaresolverr": 0, "echec": 0}
+_dernier: dict[str, str] = {}             # dernière raison d'échec, par étage — pour /health
 
 
 def _texte(html: str) -> str:
@@ -92,20 +93,33 @@ def _scrapling(url: str, timeout: int, furtif: bool, proxy: str = "",
         else:
             p = Fetcher.get(url, timeout=timeout, **kw)
         return _corps(p), int(getattr(p, "status", 0) or 0)
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        _dernier["scrapling-furtif" if furtif else "scrapling-rapide"] = \
+            f"{type(e).__name__} : {str(e)[:150]}"
         return None
 
 
 def _flaresolverr(cmd: dict):
+    """Repli. ⚠️ Ne JAMAIS avaler l'erreur en silence : un repli muet transforme une
+    panne en « aucun moyen n'a rendu la page », sans dire pourquoi (27/08)."""
     if not FLARE:
+        _dernier["flaresolverr"] = "aucun repli configuré"
         return None
+    # on ne transmet QUE ce que FlareSolverr comprend : un champ en trop le fait
+    # répondre en erreur.
+    propre = {k: cmd[k] for k in ("cmd", "url", "maxTimeout", "postData", "session", "proxy")
+              if k in cmd}
     try:
-        j = httpx.post(FLARE, json=cmd, timeout=cmd.get("maxTimeout", 60000) / 1000 + 15).json()
+        r = httpx.post(FLARE, json=propre,
+                       timeout=propre.get("maxTimeout", 60000) / 1000 + 15)
+        j = r.json()
         if j.get("status") != "ok":
+            _dernier["flaresolverr"] = f"réponse {j.get('status')} : {str(j.get('message'))[:120]}"
             return None
         sol = j.get("solution", {})
         return sol.get("response", ""), int(sol.get("status") or 0)
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        _dernier["flaresolverr"] = f"{type(e).__name__} : {str(e)[:150]}"
         return None
 
 
@@ -150,6 +164,9 @@ async def v1(request: Request):
             continue
         html, status = r
         if _est_leurre(html):
+            # dire POURQUOI : « page de vérification » et « site qui bloque à force de
+            # requêtes » se ressemblent, et seule la taille les distingue.
+            _dernier[nom] = f"page de vérification ou vide ({len(html)} o)"
             continue
         _stats[nom] += 1
         return {"status": "ok", "message": f"servi par {nom}",
@@ -159,14 +176,17 @@ async def v1(request: Request):
                 "via": nom}
 
     _stats["echec"] += 1
-    return {"status": "error", "message": "aucun moyen n'a rendu la page (rapide, furtif, repli)"}
+    return {"status": "error",
+            "message": "aucun moyen n'a rendu la page — " + " | ".join(
+                f"{k}: {v}" for k, v in _dernier.items()) or "aucun détail"}
 
 
 @app.get("/health")
 def health():
     return {"ok": True, "service": "passerelle Scrapling", "port": PORT,
             "mode_furtif": FURTIF, "repli_flaresolverr": FLARE or None,
-            "sessions": len(_sessions), "servis": dict(_stats)}
+            "sessions": len(_sessions), "servis": dict(_stats),
+            "derniers_echecs": dict(_dernier)}
 
 
 if __name__ == "__main__":
