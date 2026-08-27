@@ -36,7 +36,10 @@ services:
       # FlareSolverr = stack DÉDIÉE Tako (tako-flaresolverr derrière tako-gluetun → ProtonVPN
       # France, IP STABLE et indépendante des IA). Évite que le changement de zone VPN des IA
       # casse les sessions anti-bot de Tako. FSR_URL + FLARESOLVERR_URL (double nom historique).
-      - FSR_URL=http://tako-gluetun:8191/v1
+      # Passe d'abord par la passerelle Scrapling (port 8195, même netns que gluetun) ;
+      # elle replie d'elle-même sur tako-flaresolverr:8191 si le site résiste.
+      # ⚠️ Repli d'urgence : remettre http://tako-gluetun:8191/v1 ici et redémarrer.
+      - FSR_URL=http://tako-gluetun:8195/v1
       - FLARESOLVERR_URL=http://tako-gluetun:8191/v1
       - VPN_PROXY_URL=
       - GLUETUN_CONTROL_URL=${GLUETUN_CONTROL_URL:-http://tako-gluetun:8000}
@@ -95,6 +98,31 @@ services:
     restart: unless-stopped
     networks:
       - tako-network
+
+  # Passerelle Scrapling : parle le protocole FlareSolverr, mais sert la page SANS
+  # navigateur quand le site le permet — mesuré 12× plus rapide (Bedetheque 0,2 s contre
+  # 1,3 s, 27/08). Aucun provider n'a changé : seul FSR_URL pointe ici désormais, et le
+  # repli sur tako-flaresolverr (MÊME réseau VPN) prend les cibles dures comme Amazon.
+  # Rappel de l'en-tête de FlareSolverrClient.js : un Chromium par session a déjà mené
+  # à « 301 Chromium = 960 % CPU ». Le mode rapide n'en lance aucun.
+  tako-scrapling:
+    build: ./scrapling-gateway
+    container_name: tako_scrapling
+    network_mode: "service:tako-gluetun"   # sort PAR le VPN dédié Tako, comme FlareSolverr
+    environment:
+      - SCRAPLING_GATEWAY_PORT=8195
+      - SCRAPLING_GATEWAY_HOST=0.0.0.0
+      - SCRAPLING_GATEWAY_FURTIF=0        # pas de navigateur ici : c'est le rôle du repli
+      - SCRAPLING_GATEWAY_FLARE=http://127.0.0.1:8191/v1
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1'
+    depends_on:
+      - tako-gluetun
+      - tako-flaresolverr
+    restart: unless-stopped
 
   tako-flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
