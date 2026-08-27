@@ -95,6 +95,8 @@ services:
       TZ: Europe/Paris
     ports:
       - "127.0.0.1:8192:8191"   # tako-flaresolverr (via netns gluetun) — 8191 pris par les IA
+      - "127.0.0.1:8195:8195"   # passerelle Scrapling — utilisée aussi par Firehouse
+                                # (laststicker) qui doit sortir par CE VPN, pas en direct
     restart: unless-stopped
     networks:
       - tako-network

@@ -35,7 +35,11 @@ import { createLogger } from '../../../shared/utils/logger.js';
 // Configuration
 const BEDETHEQUE_BASE_URL = 'https://www.bedetheque.com';
 const BDGEST_URL = 'https://www.bdgest.com';
-const FLARESOLVERR_URL = process.env.FLARESOLVERR_URL || 'http://flaresolverr:8191/v1';
+// ⚠️ Ce provider lisait UNIQUEMENT FLARESOLVERR_URL, alors que tous les autres lisent
+// FSR_URL en premier : il était donc le seul à rester sur FlareSolverr quand la
+// passerelle Scrapling a été branchée. Or c'est justement la cible où le gain est le
+// plus net (0,20 s contre 1,30 s, mesuré le 27/08). On aligne l'ordre de lecture.
+const FLARESOLVERR_URL = process.env.FSR_URL || process.env.FLARESOLVERR_URL || 'http://flaresolverr:8191/v1';
 const DEFAULT_MAX_RESULTS = 20;
 const RATE_LIMIT_DELAY = 1000; // 1 seconde entre les requêtes
 
@@ -52,7 +56,15 @@ export class BedethequeProvider extends BaseProvider {
 
     this.normalizer = new BedethequeNormalizer();
     this.log = createLogger('BedethequeProvider');
-    this.userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    // ⚠️ Bedetheque refuse la forme LONGUE du numéro de version, pas la version elle-même.
+    // Mesuré le 27/08 sur /ajax/tout : « Chrome/120.0.0.0 » → 403, « Chrome/139.0.0.0 » → 403,
+    // « Chrome/122.0.6261.94 » → 403, mais « Chrome/122 » → 200 et « Chrome/139 » → 200.
+    // Conséquence : CHAQUE recherche partait en 403, tombait sur le repli FlareSolverr, et la
+    // page rendue par le navigateur ne se parsait pas → la recherche rendait 0 résultat EN
+    // SILENCE (succès HTTP 200, data: []). Le repli masquait la panne au lieu de la signaler.
+    // Ne PAS « moderniser » cet UA en y remettant un numéro de build : c'est ce qui déclenche
+    // le blocage. La forme courte répond en 0,19 s, sans navigateur.
+    this.userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139 Safari/537.36';
     this.lastRequestTime = 0;
     
     // Session FlareSolverr (cookies, CSRF)
